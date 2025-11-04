@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "sd-screen-shot"
+version = "0.1.0"
+description = ""
+authors = []
+readme = "README.md"
+
+
+[tool.poetry.scripts]
+sd-screen-shot = "sd_screen_shot:main"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
