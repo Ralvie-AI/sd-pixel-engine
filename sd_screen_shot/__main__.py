@@ -19,6 +19,16 @@ def parse_days(value):
     except ValueError:
         raise argparse.ArgumentTypeError("Days must be comma-separated integers (e.g. 0,1,2,3,4)")
     
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected (true/false).")
+    
 def main():
     parser = argparse.ArgumentParser(description="Screenshot uploader")
     parser.add_argument("--server_url", required=True, help="URL to upload screenshots")
@@ -29,6 +39,8 @@ def main():
                     help="End time (HH:MM)")
     parser.add_argument("--times_per_hour", type=int, default=7, help="Screenshots per hour")
     parser.add_argument("--days", type=parse_days, default=[0,1,2,3,4], help="Allowed weekdays (0=Mon ... 6=Sun)")
+    parser.add_argument("--is_idle_screenshot", type=str2bool, nargs="?", const=True, default=False,
+                        help="Enable idle screenshots (true/false, default=False)")
 
     args = parser.parse_args()
 
@@ -40,7 +52,8 @@ def main():
         start_time=args.start_hour,
         end_time=args.end_hour,
         times_per_hour=args.times_per_hour,
-        days=args.days
+        days=args.days,
+        is_idle_screenshot=args.is_idle_screenshot,
     )
 
     screenshot.run()

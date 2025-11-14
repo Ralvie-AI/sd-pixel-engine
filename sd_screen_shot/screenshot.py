@@ -18,8 +18,9 @@ logging.basicConfig(
 )
 
 class ScreenShot:
-    def __init__(self, server_url, user_id, start_time=time(8, 0), end_time=time(17, 0), 
-                 times_per_hour=7, days=[0,1,2,3,4]):
+    def __init__(self, server_url, user_id, start_time=time(8, 0), 
+                 end_time=time(17, 0), times_per_hour=7, 
+                 days=[0,1,2,3,4], is_idle_screenshot=False):
         """
         server_url: URL to POST screenshots
         start_time, end_time: datetime.time objects (default 8:00 AM - 5:00 PM)
@@ -33,7 +34,8 @@ class ScreenShot:
         self.times_per_hour = times_per_hour
         self.days = days
         self.interval = 3600 / times_per_hour  # seconds between screenshots
-
+        self.is_idle_screenshot = is_idle_screenshot
+  
     def _should_take_screenshot(self):
         now = datetime.now()
         current_time = now.time()
@@ -66,7 +68,8 @@ class ScreenShot:
                 if self._should_take_screenshot():
                     capture_screenshot_data = self._take_screenshot()  
                     payload = {
-                        'file_location': capture_screenshot_data
+                        'file_location': capture_screenshot_data,
+                        'is_idle_screenshot': self.is_idle_screenshot,
                     }
                     response = requests.post(self.server_url, json=payload)
                     logger.info(f"response => {response.json()}")  
