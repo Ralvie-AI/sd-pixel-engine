@@ -68,6 +68,8 @@ class ScreenShot:
             # print(datetime.now())
             # print("self.interval 1", self.interval)
             try:
+                logger.info(f"Interval time for taking screenshot => {self.interval}")
+                time_sleep(self.interval)   
                 if self._should_take_screenshot():
                     capture_screenshot_data = self._take_screenshot()  
                     payload = {
@@ -76,7 +78,7 @@ class ScreenShot:
                     }
                     response = requests.post(self.server_url, json=payload)
                     logger.info(f"response => {response.json()}")  
-                    time_sleep(self.interval)
+                    # time_sleep(self.interval)
                 else:
                     time_sleep(10)  # wait before checking again
             except KeyboardInterrupt:
