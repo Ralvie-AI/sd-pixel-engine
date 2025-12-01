@@ -43,9 +43,11 @@ class ScreenShot:
 
     def _take_screenshot(self, screenshot_folder=None):
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        # today = datetime.now().strftime("%Y-%m-%d")
+        # if screenshot_folder is None:
+        #     screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots", today)
         if screenshot_folder is None:
-            screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots", today)
+            screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots")
 
         if not os.path.isdir(screenshot_folder):
             os.makedirs(screenshot_folder)
@@ -53,6 +55,7 @@ class ScreenShot:
         # Generate a timestamp for the filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
+
 
         with mss() as sct:
             sct.shot(output=output_file)
