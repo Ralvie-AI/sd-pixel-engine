@@ -2,7 +2,7 @@ import argparse
 from datetime import time
 
 from sd_core.log import setup_logging
-from sd_screen_shot.screenshot import ScreenShot
+from sd_pixel_engine.screenshot import ScreenShot
 # from screenshot import ScreenShot
 
 def parse_time(value: str) -> time:

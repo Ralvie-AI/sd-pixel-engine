@@ -1,6 +1,6 @@
 block_cipher = None
 
-a = Analysis(['sd_screen_shot/__main__.py'],
+a = Analysis(['sd_pixel_engine/__main__.py'],
              pathex=[],
              binaries=None,
              datas=None,
