@@ -34,7 +34,7 @@ def main():
 
     # Set up logging
     setup_logging(
-        "sd-screen-shot",
+        "sd-pixel-engine",
         log_stderr=True,
         log_file=True,
     )

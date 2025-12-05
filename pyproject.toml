@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "sd-screen-shot"
+name = "sd-pixel-engine"
 version = "0.1.0"
 description = ""
 authors = []
@@ -7,7 +7,7 @@ readme = "README.md"
 
 
 [tool.poetry.scripts]
-sd-screen-shot = "sd_screen_shot:main"
+sd-pixel-engine = "sd_pixel_engine:main"
 
 [tool.poetry.dependencies]
 python = "^3.11"

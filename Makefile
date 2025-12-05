@@ -2,9 +2,9 @@ build:
 	poetry install
 
 package:
-	pyinstaller sd-screen-shot.spec --clean --noconfirm
+	pyinstaller sd-pixel-engine.spec --clean --noconfirm
 
 clean:
 	rm -rf build dist
-	rm -rf sd_screen_shot/__pycache__
+	rm -rf sd_pixel_engine/__pycache__
 
