@@ -2,8 +2,9 @@ import logging
 import os
 from time import sleep as  time_sleep
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
+import schedule
 import requests
 from mss import mss
 
@@ -33,19 +34,68 @@ class ScreenShot:
         self.server_url = server_url if server_url else "http://localhost:7600/screenshot/"
         self.times_per_hour = times_per_hour
         self.days = days
-        self.interval = 3600 / times_per_hour  # seconds between screenshots
         self.is_idle_screenshot = is_idle_screenshot
-  
-    def _should_take_screenshot(self):
-        now = datetime.now()
-        current_time = now.time()
-        return now.weekday() in self.days and self.start_time <= current_time <= self.end_time
 
+    def _generate_daily_times(self):
+        """
+        Return list of 'HH:MM' strings for schedule module.
+        """
+        today = datetime.now().date()
+
+        start_dt = datetime.combine(today, self.start_time)
+        end_dt = datetime.combine(today, self.end_time)
+
+        interval = timedelta(minutes=60 / self.times_per_hour)
+        schedule_times = []
+
+        current = start_dt
+        while current <= end_dt:
+            for i in range(self.times_per_hour):
+                t = current + i * interval
+                if start_dt <= t <= end_dt:
+                    # logger.info(f"type => {type(t.strftime('%H:%M'))} => {t.strftime('%H:%M')}")
+                    tmp_time = t.strftime("%H:%M")
+                    if tmp_time not in schedule_times:
+                        schedule_times.append(tmp_time)
+            current = (current + timedelta(hours=1)).replace(
+                minute=0, second=0, microsecond=0
+            )
+
+        return schedule_times
+
+    def run(self):
+        logger.info("Screenshot scheduler started using schedule module")
+
+        last_scheduled_date = None  # track day to avoid duplicate registrations
+
+        while True:
+            now = datetime.now()
+
+            # register schedule ONCE per day
+            if now.date() != last_scheduled_date:
+                last_scheduled_date = now.date()
+
+                if now.weekday() not in self.days:
+                    logger.info("Today is not allowed. Waiting 1 hour...")
+                    time_sleep(3600)
+                    continue
+
+                # RESET schedule for new day
+                schedule.clear()
+
+                times = self._generate_daily_times()
+                logger.info("Generated today's scheduled screenshot times:")
+                logger.info(f"Times => {times}")
+                for t in times:
+                    logger.info(f" - {t}")
+                    schedule.every().day.at(t).do(self._scheduled_job)
+
+            # run jobs
+            schedule.run_pending()
+            time_sleep(1)  
+   
     def _take_screenshot(self, screenshot_folder=None):
 
-        # today = datetime.now().strftime("%Y-%m-%d")
-        # if screenshot_folder is None:
-        #     screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots", today)
         if screenshot_folder is None:
             screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots")
 
@@ -62,28 +112,20 @@ class ScreenShot:
 
         return output_file
     
-    def run(self):
-        logger.info("Screenshot scheduler started")
-        while True:
-            # print(datetime.now())
-            # print("self.interval 1", self.interval)
-            try:
-                logger.info(f"Interval time for taking screenshot => {self.interval}")
-                time_sleep(self.interval)   
-                if self._should_take_screenshot():
-                    capture_screenshot_data = self._take_screenshot()  
-                    payload = {
-                        'file_location': capture_screenshot_data,
-                        'is_idle_screenshot': self.is_idle_screenshot,
-                    }
-                    response = requests.post(self.server_url, json=payload)
-                    logger.info(f"response => {response.json()}")  
-                    # time_sleep(self.interval)
-                else:
-                    time_sleep(10)  # wait before checking again
-            except KeyboardInterrupt:
-                logger.info("Screenshot stopped by keyboard interrupt")
-                break
-            except Exception as e:
-                logger.error(f"Error in screenshot loop: {e}")
-                time_sleep(10)
+    def _scheduled_job(self):
+        try:
+            logger.info("Scheduled screenshot triggered")
+
+            screenshot_path = self._take_screenshot()
+
+            payload = {
+                'file_location': screenshot_path,
+                'is_idle_screenshot': self.is_idle_screenshot,
+            }
+
+            response = requests.post(self.server_url, json=payload)
+            logger.info(f"Upload response => {response.json()}")
+
+        except Exception as e:
+            logger.error(f"Error in scheduled job: {e}")    
+    
