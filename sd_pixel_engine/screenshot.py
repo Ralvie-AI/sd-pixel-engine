@@ -87,7 +87,7 @@ class ScreenShot:
                 logger.info("Generated today's scheduled screenshot times:")
                 logger.info(f"Times => {times}")
                 for t in times:
-                    logger.info(f" - {t}")
+                    # logger.info(f" - {t}")
                     schedule.every().day.at(t).do(self._scheduled_job)
 
             # run jobs
