@@ -143,8 +143,8 @@ class ScreenShot:
     def run_always(self):
         logger.info("Screenshot scheduler started time_specific")
         while True:
-            print(datetime.now())
-            print("self.interval 1", self.interval)
+            # print(datetime.now())
+            # print("self.interval 1", self.interval)
             try:
                 logger.info(f"Interval time for taking screenshot => {self.interval}")
                 time_sleep(self.interval)   
@@ -162,8 +162,5 @@ class ScreenShot:
             except requests.exceptions.RequestException as req_e:
                 logger.error(f"Error during API request: {req_e}")
             except Exception as e:
-                logger.error(f"Error in scheduled job: {e}")           
-            except Exception as e:
-                logger.error(f"Error in screenshot loop: {e}")
-                time_sleep(10)
+                logger.error(f"Error in run_always : {e}")                      
             
