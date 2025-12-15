@@ -158,7 +158,7 @@ class ScreenShot:
                 response.raise_for_status() # Raise an exception for bad status codes
                 logger.info(f"response => {response.json()}") 
                 
-                time_sleep(10)  # wait before checking again
+                # time_sleep(10)  # wait before checking again
             except requests.exceptions.RequestException as req_e:
                 logger.error(f"Error during API request: {req_e}")
             except Exception as e:
