@@ -50,6 +50,7 @@ def main():
     parser.add_argument("--days", type=parse_days, default=[0,1,2,3,4], help="Allowed weekdays (0=Mon ... 6=Sun)")
     parser.add_argument("--is_idle_screenshot", type=str2bool, nargs="?", const=True, default=False,
                         help="Enable idle screenshots (true/false, default=False)")
+    parser.add_argument("--tracking_interval", type=int, default=0, help="Tracking Intervalr")
 
     args = parser.parse_args()    
 
@@ -60,10 +61,13 @@ def main():
         end_time=args.end_hour,
         times_per_hour=args.times_per_hour,
         days=args.days,
-        is_idle_screenshot=args.is_idle_screenshot,
+        is_idle_screenshot=args.is_idle_screenshot        
     )
 
-    screenshot.run()
+    if args.tracking_interval == 0:
+        screenshot.run_always()
+    else:
+        screenshot.run()
 
 if __name__ == '__main__':
     main()

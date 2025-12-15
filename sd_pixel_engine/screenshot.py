@@ -34,6 +34,7 @@ class ScreenShot:
         self.times_per_hour = times_per_hour
         self.days = days
         self.is_idle_screenshot = is_idle_screenshot
+        self.interval = 3600 / times_per_hour  # seconds between screenshots
 
     def _generate_daily_times(self):
         """
@@ -137,4 +138,32 @@ class ScreenShot:
             logger.error(f"Error during API request: {req_e}")
         except Exception as e:
             logger.error(f"Error in scheduled job: {e}")
+
+    
+    def run_always(self):
+        logger.info("Screenshot scheduler started time_specific")
+        while True:
+            print(datetime.now())
+            print("self.interval 1", self.interval)
+            try:
+                logger.info(f"Interval time for taking screenshot => {self.interval}")
+                time_sleep(self.interval)   
+           
+                capture_screenshot_data = self._take_screenshot()  
+                payload = {
+                    'file_location': capture_screenshot_data,
+                    'is_idle_screenshot': self.is_idle_screenshot,
+                }
+                response = requests.post(self.server_url, json=payload)
+                response.raise_for_status() # Raise an exception for bad status codes
+                logger.info(f"response => {response.json()}") 
+                
+                time_sleep(10)  # wait before checking again
+            except requests.exceptions.RequestException as req_e:
+                logger.error(f"Error during API request: {req_e}")
+            except Exception as e:
+                logger.error(f"Error in scheduled job: {e}")           
+            except Exception as e:
+                logger.error(f"Error in screenshot loop: {e}")
+                time_sleep(10)
             
