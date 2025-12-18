@@ -1,7 +1,7 @@
 import logging
 import os
 from time import sleep as time_sleep
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 
 import schedule
 import requests
@@ -124,10 +124,12 @@ class ScreenShot:
             logger.info("Scheduled screenshot triggered")
 
             screenshot_path = self._take_screenshot()
+            capture_time =  datetime.now(timezone.utc)
 
             payload = {
                 'file_location': screenshot_path,
                 'is_idle_screenshot': self.is_idle_screenshot,
+                'created_at': capture_time.isoformat()
             }          
 
             response = requests.post(self.server_url, json=payload)
@@ -149,10 +151,12 @@ class ScreenShot:
                 logger.info(f"Interval time for taking screenshot => {self.interval}")
                 time_sleep(self.interval)   
            
-                capture_screenshot_data = self._take_screenshot()  
+                capture_screenshot_data = self._take_screenshot()
+                capture_time =  datetime.now(timezone.utc)
                 payload = {
                     'file_location': capture_screenshot_data,
                     'is_idle_screenshot': self.is_idle_screenshot,
+                    'created_at': capture_time.isoformat()
                 }
                 response = requests.post(self.server_url, json=payload)
                 response.raise_for_status() # Raise an exception for bad status codes
