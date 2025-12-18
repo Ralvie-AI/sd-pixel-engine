@@ -143,7 +143,7 @@ class ScreenShot:
 
     
     def run_always(self):
-        logger.info("Screenshot scheduler started time_specific")
+        logger.info("Screenshot scheduler started Always")
         while True:
             # print(datetime.now())
             # print("self.interval 1", self.interval)
