@@ -134,37 +134,76 @@ class ScreenShot:
 
             response = requests.post(self.server_url, json=payload)
             response.raise_for_status() # Raise an exception for bad status codes
-            logger.info(f"Upload response => {response.json()}")
+            logger.info(f"Upload response time_specific => {response.json()}")
 
         except requests.exceptions.RequestException as req_e:
             logger.error(f"Error during API request: {req_e}")
         except Exception as e:
             logger.error(f"Error in scheduled job: {e}")
 
+    def _next_anchored_time(self, now: datetime) -> datetime:
+        
+        interval = timedelta(seconds=3600 / self.times_per_hour)
+
+        today_start = datetime.combine(now.date(), self.start_time)
+
+        # If started before today's start_time
+        if now < today_start:
+            return today_start
+
+        elapsed = now - today_start
+        intervals_passed = int(elapsed.total_seconds() // interval.total_seconds()) + 1
+
+        return today_start + interval * intervals_passed
     
     def run_always(self):
-        logger.info("Screenshot scheduler started Always")
+
+        logger.info(
+            f"Anchored mode: {self.times_per_hour} screenshots/hour "
+            f"(every {int(3600 / self.times_per_hour)} seconds)"
+        )
+
+        next_run = self._next_anchored_time(datetime.now())
+        logger.info(f"First anchored screenshot at {next_run.strftime('%H:%M:%S')}")
+
         while True:
-            # print(datetime.now())
-            # print("self.interval 1", self.interval)
+
             try:
-                logger.info(f"Interval time for taking screenshot => {self.interval}")
-                time_sleep(self.interval)   
-           
-                capture_screenshot_data = self._take_screenshot()
-                capture_time =  datetime.now(timezone.utc)
+                now = datetime.now()
+
+                sleep_seconds = (next_run - now).total_seconds()
+                if sleep_seconds > 0:
+                    time_sleep(sleep_seconds)
+
+                logger.info("Taking anchored screenshot")
+
+                screenshot_path = self._take_screenshot()
+                capture_time = datetime.now(timezone.utc)
+
                 payload = {
-                    'file_location': capture_screenshot_data,
-                    'is_idle_screenshot': self.is_idle_screenshot,
-                    'created_at': capture_time.isoformat()
+                    "file_location": screenshot_path,
+                    "is_idle_screenshot": self.is_idle_screenshot,
+                    "created_at": capture_time.isoformat(),
                 }
+
                 response = requests.post(self.server_url, json=payload)
-                response.raise_for_status() # Raise an exception for bad status codes
-                logger.info(f"response => {response.json()}") 
-                
-                # time_sleep(10)  # wait before checking again
+                response.raise_for_status()
+
+                logger.info(f"Upload response => {response.json()}")
+
+                # Move to next anchored slot
+                next_run += timedelta(seconds=3600 / self.times_per_hour)
+
+                # Safety re-align (sleep / lag)
+                if next_run <= datetime.now():
+                    next_run = self._next_anchored_time(datetime.now())
+
             except requests.exceptions.RequestException as req_e:
-                logger.error(f"Error during API request: {req_e}")
+                logger.error(f"API error: {req_e}")
+                time_sleep(10)
+
             except Exception as e:
-                logger.error(f"Error in run_always : {e}")                      
-            
+                logger.error(f"Anchored scheduler error: {e}")
+                time_sleep(10)
+
+    
