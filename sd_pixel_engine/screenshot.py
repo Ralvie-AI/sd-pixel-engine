@@ -94,7 +94,7 @@ class ScreenShot:
 
             # run jobs
             schedule.run_pending()
-            time_sleep(1)  
+            # time_sleep(1)  
     
     def _take_screenshot(self, screenshot_folder=None):
 
@@ -116,7 +116,7 @@ class ScreenShot:
     
     def _scheduled_job(self):
         try:           
-            now_time = datetime.now().time()
+            now_time = datetime.now().time().replace(second=0, microsecond=0)
             if not (self.start_time <= now_time <= self.end_time):               
                 logger.warning(f"Job triggered outside of schedule time: {now_time}")
                 return
