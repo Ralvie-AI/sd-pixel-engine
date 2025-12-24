@@ -1,9 +1,9 @@
 import logging
 import os
+import subprocess
 from time import sleep as time_sleep
 from datetime import datetime, time, timedelta, timezone
 
-import schedule
 import requests
 from mss import mss
 
@@ -17,9 +17,14 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
 )
 
+def stop_process_by_exe(exe_name, time_sleep=0.2):
+    logger.info(f"killing start cmd_name {exe_name}")
+    subprocess.run(f"taskkill /F /IM {exe_name}", shell=True)
+    time.sleep(time_sleep)  # wait 200ms for process cleanup
+
 class ScreenShot:
-    def __init__(self, server_url, user_id, start_time=time(8, 0), 
-                 end_time=time(17, 0), times_per_hour=7, 
+    def __init__(self, server_url, user_id, start_time=time(0, 0), 
+                 end_time=time(23, 59), times_per_hour=1, 
                  days=[0,1,2,3,4], is_idle_screenshot=False):
         """
         server_url: URL to POST screenshots
@@ -36,65 +41,74 @@ class ScreenShot:
         self.is_idle_screenshot = is_idle_screenshot
         self.interval = 3600 / times_per_hour  # seconds between screenshots
 
-    def _generate_daily_times(self):
-        """
-        Returns a list of 'HH:MM' strings for a continuous schedule 
-        between two times, anchored strictly at the start time.
-        """
-        today = datetime.now().date()
-
-        interval_minutes = 60 / self.times_per_hour
-        interval = timedelta(minutes=interval_minutes)
-        
     
-        current_dt = datetime.combine(today, self.start_time)
-        end_dt = datetime.combine(today, self.end_time)
-        
-        # Handle schedules that cross midnight (optional, but good practice)
-        if end_dt < current_dt:
-            end_dt += timedelta(days=1)
+    def _next_run_datetime(self, now: datetime) -> datetime:
+        """
+        Always returns the next valid execution datetime,
+        correctly handling cross-midnight schedules forever.
+        """
 
-        schedule_times = []
+        interval = timedelta(seconds=self.interval)
 
- 
-        while current_dt <= end_dt:
-            # Add the current time string to the list
-            schedule_times.append(current_dt.strftime("%H:%M"))
-            
-            # Advance to the next time slot
-            current_dt += interval
+        today_start = datetime.combine(now.date(), self.start_time)
+        today_end = datetime.combine(now.date(), self.end_time)
 
-        return schedule_times    
+        # Handle cross-midnight window
+        if today_end <= today_start:
+            today_end += timedelta(days=1)
 
+        # If before start → first slot
+        if now < today_start:
+            return today_start
+
+        # If within window → next aligned slot
+        if today_start <= now <= today_end:
+            elapsed = (now - today_start).total_seconds()
+            slots_passed = int(elapsed // self.interval) + 1
+            return today_start + slots_passed * interval
+
+        # After window → next day's first slot
+        next_day = now.date() + timedelta(days=1)
+        return datetime.combine(next_day, self.start_time)
+    
+    def _is_within_time_window(self, now: time) -> bool:
+        if self.end_time > self.start_time:
+            return self.start_time <= now <= self.end_time
+        else:
+            # Cross-midnight window
+            return now >= self.start_time or now <= self.end_time
+    
     def run(self):
-        logger.info("Screenshot scheduler started using schedule module")
-
-        last_scheduled_date = None  # track day to avoid duplicate registrations
+        logger.info("Screenshot scheduler started (cross-midnight safe)")
 
         while True:
             now = datetime.now()
 
-            # register schedule ONCE per day
-            if now.date() != last_scheduled_date:
-                last_scheduled_date = now.date()
+            # Determine which day the schedule belongs to
+            schedule_day = now.date()
+            if self.end_time <= self.start_time and now.time() <= self.end_time:
+                schedule_day -= timedelta(days=1)
 
-                if now.weekday() not in self.days:
-                    logger.info("Today is not allowed. Waiting 1 hour...")
-                    time_sleep(3600)
-                    continue
+            if schedule_day.weekday() not in self.days:
+                logger.info("Schedule day not allowed. Sleeping until next day.")
+                self._sleep_until_next_day()
+                continue
 
-                # RESET schedule for new day
-                schedule.clear()
+            next_run = self._next_run_datetime(now)
+            logger.info(f"next run => {next_run}")
+            sleep_seconds = (next_run - now).total_seconds()
+            if sleep_seconds > 0:
+                logger.info(f"Next screenshot at {next_run}")
+                time_sleep(sleep_seconds)
 
-                times = self._generate_daily_times()
-                logger.info("Generated today's scheduled screenshot times:")
-                logger.info(f"Times => {times}")
-                for t in times:
-                    schedule.every().day.at(t).do(self._scheduled_job)
+            self._scheduled_job()
 
-            # run jobs
-            schedule.run_pending()
-            # time_sleep(1)  
+    def _sleep_until_next_day(self):
+        tomorrow = datetime.combine(
+            datetime.now().date() + timedelta(days=1),
+            time(0, 0)
+        )
+        time_sleep((tomorrow - datetime.now()).total_seconds())
     
     def _take_screenshot(self, screenshot_folder=None):
 
@@ -117,10 +131,11 @@ class ScreenShot:
     def _scheduled_job(self):
         try:           
             now_time = datetime.now().time().replace(second=0, microsecond=0)
-            if not (self.start_time <= now_time <= self.end_time):               
+            if not self._is_within_time_window(now_time):
                 logger.warning(f"Job triggered outside of schedule time: {now_time}")
+                stop_process_by_exe("sd-pixel-engine.exe")
                 return
-
+           
             logger.info("Scheduled screenshot triggered")
 
             screenshot_path = self._take_screenshot()
@@ -140,6 +155,9 @@ class ScreenShot:
             logger.error(f"Error during API request: {req_e}")
         except Exception as e:
             logger.error(f"Error in scheduled job: {e}")
+
+
+    # Always Option Tracking Interval
 
     def _next_anchored_time(self, now: datetime) -> datetime:
         
