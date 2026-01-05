@@ -6,6 +6,7 @@ from datetime import datetime, time, timedelta, timezone
 
 import requests
 from mss import mss
+from PIL import Image
 
 os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
@@ -123,8 +124,14 @@ class ScreenShot:
         output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
 
         # The mss library handles the screenshot capture
+        # with mss() as sct:
+        #     sct.shot(output=output_file)
+        
         with mss() as sct:
-            sct.shot(output=output_file)
+            monitor = sct.monitors[0]  # all monitors combined
+            screenshot = sct.grab(monitor)
+            img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+            img.save(output_file)
 
         return output_file
     
