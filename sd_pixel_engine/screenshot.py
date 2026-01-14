@@ -1,12 +1,16 @@
 import logging
 import os
 import subprocess
-from time import sleep as time_sleep
+from time import sleep as time_sleep, perf_counter as time_perf_counter
 from datetime import datetime, time, timedelta, timezone
+from glob import glob
+
 
 import requests
 from mss import mss
 from PIL import Image
+
+from sd_pixel_engine.utils import get_image_name_to_utc
 
 os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
@@ -18,10 +22,10 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
 )
 
-def stop_process_by_exe(exe_name, time_sleep=0.2):
+def stop_process_by_exe(exe_name, time_sleep_time=0.2):
     logger.info(f"killing start cmd_name {exe_name}")
     subprocess.run(f"taskkill /F /IM {exe_name}", shell=True)
-    time.sleep(time_sleep)  # wait 200ms for process cleanup
+    time_sleep(time_sleep_time)  # wait 200ms for process cleanup
 
 class ScreenShot:
     def __init__(self, server_url, user_id, start_time=time(0, 0), 
@@ -78,8 +82,48 @@ class ScreenShot:
         else:
             # Cross-midnight window
             return now >= self.start_time or now <= self.end_time
-    
+        
     def run(self):
+        logger.info("Screenshot scheduler started (cross-midnight safe)")
+
+        INTERVAL = 30
+
+        while True:
+            now = datetime.now()
+
+            # Determine schedule day (cross-midnight safe)
+            schedule_day = now.date()
+            if self.end_time <= self.start_time and now.time() <= self.end_time:
+                schedule_day -= timedelta(days=1)
+
+            if schedule_day.weekday() not in self.days:
+                logger.info("Schedule day not allowed. Sleeping until next day.")
+                self._sleep_until_next_day()
+                continue
+
+            next_run = self._next_run_datetime(now)
+            logger.info(f"next run => {next_run}")
+
+            while True:
+                now = datetime.now()
+
+                if now >= next_run:
+                    break
+
+                start_time = time_perf_counter()
+                self._take_screenshot_30_seconds()
+                duration = time_perf_counter() - start_time
+
+                logger.info(f"Screenshot took {duration:.4f} seconds")
+
+                # sleep only remaining time in interval
+                sleep_time = max(0, INTERVAL - duration)
+                logger.info(f"sleep_time INTERVAL {sleep_time} seconds")
+                time_sleep(sleep_time)
+
+            self._scheduled_job()
+    
+    def run_old(self):
         logger.info("Screenshot scheduler started (cross-midnight safe)")
 
         while True:
@@ -98,8 +142,26 @@ class ScreenShot:
             next_run = self._next_run_datetime(now)
             logger.info(f"next run => {next_run}")
             sleep_seconds = (next_run - now).total_seconds()
+            logger.info(f"sleep_seconds => {sleep_seconds}")            
+            
+            INTERVAL = 30
             if sleep_seconds > 0:
                 logger.info(f"Next screenshot at {next_run}")
+                
+                time_taken_shot = 0
+                logger.info(f"time_taken_shot 0 => {time_taken_shot}")
+                while True:
+                    if time_taken_shot > sleep_seconds:
+                        break 
+                    time_taken_shot += INTERVAL
+                    start_time = time_perf_counter()
+                    self._take_screenshot_30_seconds()      
+                    end_time = time_perf_counter()
+                    duration = end_time - start_time
+                    logger.info(f"Function took {duration:.4f} seconds to run.")              
+                    logger.info(f"time_taken_shot 1 => {time_taken_shot}")
+                    time_sleep(INTERVAL)
+
                 time_sleep(sleep_seconds)
 
             self._scheduled_job()
@@ -110,6 +172,34 @@ class ScreenShot:
             time(0, 0)
         )
         time_sleep((tomorrow - datetime.now()).total_seconds())
+    
+    # 2026-01-13 06:58:16.823000+00:00 UTC Time
+    # 2026-01-13T06-58-16.823000Z.png
+    def _take_screenshot_30_seconds(self, screenshot_folder=None):
+
+        if screenshot_folder is None:
+            screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots", self.user_id)
+
+        if not os.path.isdir(screenshot_folder):
+            os.makedirs(screenshot_folder)
+
+        # Generate a timestamp for the filename
+        utc_now = datetime.now(timezone.utc)
+        timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
+
+        output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
+
+        # The mss library handles the screenshot capture
+        # with mss() as sct:
+        #     sct.shot(output=output_file)
+        
+        with mss() as sct:
+            monitor = sct.monitors[0]  # all monitors combined
+            screenshot = sct.grab(monitor)
+            img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+            img.save(output_file)
+
+        return output_file
     
     def _take_screenshot(self, screenshot_folder=None):
 
@@ -145,18 +235,36 @@ class ScreenShot:
            
             logger.info("Scheduled screenshot triggered")
 
-            screenshot_path = self._take_screenshot()
-            capture_time =  datetime.now(timezone.utc)
+            # screenshot_path = self._take_screenshot()
+            
+            screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots", self.user_id)
+            filename_list = glob(os.path.join(screenshot_folder, "*.png"))
+            filename_list_tmp = sorted(filename_list, reverse=False)
+            logger.info(f"filename_list_tmp[0] => {filename_list_tmp[0]}")
+            logger.info(f"filename_list_tmp[-1] => {filename_list_tmp[-1]}")
+            start_time = get_image_name_to_utc(filename_list_tmp[0])
+            end_time = get_image_name_to_utc(filename_list_tmp[-1])
 
             payload = {
-                'file_location': screenshot_path,
-                'is_idle_screenshot': self.is_idle_screenshot,
-                'created_at': capture_time.isoformat()
-            }          
-
-            response = requests.post(self.server_url, json=payload)
+                'start_time': start_time,
+                'end_time': end_time,               
+            }
+            logger.info(f"payload info => {payload}")
+            response = requests.post(self.server_url + "get_event_time_range", json=payload)
             response.raise_for_status() # Raise an exception for bad status codes
             logger.info(f"Upload response time_specific => {response.json()}")
+
+            # capture_time =  datetime.now(timezone.utc)
+
+            # payload = {
+            #     'file_location': screenshot_path,
+            #     'is_idle_screenshot': self.is_idle_screenshot,
+            #     'created_at': capture_time.isoformat()
+            # }          
+
+            # response = requests.post(self.server_url, json=payload)
+            # response.raise_for_status() # Raise an exception for bad status codes
+            # logger.info(f"Upload response time_specific => {response.json()}")
 
         except requests.exceptions.RequestException as req_e:
             logger.error(f"Error during API request: {req_e}")
