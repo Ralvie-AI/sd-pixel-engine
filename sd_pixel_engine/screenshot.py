@@ -10,7 +10,7 @@ import requests
 from mss import mss
 from PIL import Image
 
-from sd_pixel_engine.utils import get_image_name_to_utc
+from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc
 
 os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
@@ -252,6 +252,26 @@ class ScreenShot:
             logger.info(f"payload info => {payload}")
             response = requests.post(self.server_url + "get_event_time_range", json=payload)
             response.raise_for_status() # Raise an exception for bad status codes
+
+            logger.info(f"Upload response time_specific => {response.json()}")
+            response_result = response.json()
+            screenshot_to_events = []
+            if response and response_result.get('result'):
+                for tmp_file in filename_list_tmp:
+                    file_utc_time = get_image_name_to_utc(tmp_file)
+                    
+                    for row in response.get('result'):
+                        start_time, end_time = add_second_to_utc(row.get('timestamp'), row.get('duration'))
+                        if start_time <= file_utc_time <= end_time:
+                            tmp_dict = {}
+                            tmp_dict[tmp_file] = row
+
+                            screenshot_to_events.append(tmp_dict)
+
+
+
+            logger.info(f"result => {screenshot_to_events}")
+
             logger.info(f"Upload response time_specific => {response.json()}")
 
             # capture_time =  datetime.now(timezone.utc)
