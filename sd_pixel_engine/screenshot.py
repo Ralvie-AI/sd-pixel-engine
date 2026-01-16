@@ -1,6 +1,9 @@
 import logging
 import os
+import json
 import subprocess
+import shutil
+from pathlib import Path
 from time import sleep as time_sleep, perf_counter as time_perf_counter
 from datetime import datetime, time, timedelta, timezone
 from glob import glob
@@ -237,54 +240,72 @@ class ScreenShot:
 
             # screenshot_path = self._take_screenshot()
             
-            screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots", self.user_id)
-            filename_list = glob(os.path.join(screenshot_folder, "*.png"))
+            screenshot_folder_user = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots", self.user_id)
+            filename_list = glob(os.path.join(screenshot_folder_user, "*.png"))
             filename_list_tmp = sorted(filename_list, reverse=False)
-            logger.info(f"filename_list_tmp[0] => {filename_list_tmp[0]}")
-            logger.info(f"filename_list_tmp[-1] => {filename_list_tmp[-1]}")
-            start_time = get_image_name_to_utc(filename_list_tmp[0])
-            end_time = get_image_name_to_utc(filename_list_tmp[-1])
+            if len(filename_list_tmp) == 1: 
+                start_time = get_image_name_to_utc(filename_list_tmp[0])
+                end_time = get_image_name_to_utc(filename_list_tmp[0])
+            else:
+                start_time = get_image_name_to_utc(filename_list_tmp[0])
+                end_time = get_image_name_to_utc(filename_list_tmp[-1])
 
             payload = {
                 'start_time': start_time,
                 'end_time': end_time,               
             }
+
             logger.info(f"payload info => {payload}")
             response = requests.post(self.server_url + "get_event_time_range", json=payload)
             response.raise_for_status() # Raise an exception for bad status codes
 
             logger.info(f"Upload response time_specific => {response.json()}")
-            response_result = response.json()
+            response_result_tmp = response.json()
+            logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
+            response_result = json.loads(response_result_tmp["result"])
+            logger.info(f"response_result => {type(response_result)}")
+            logger.info(f"response_result => {response_result}")
             screenshot_to_events = []
-            if response and response_result.get('result'):
+            if response_result:
                 for tmp_file in filename_list_tmp:
                     file_utc_time = get_image_name_to_utc(tmp_file)
+                    logger.info(f"file_utc_time => {file_utc_time}")
                     
-                    for row in response.get('result'):
+                    for row in response_result:
                         start_time, end_time = add_second_to_utc(row.get('timestamp'), row.get('duration'))
                         if start_time <= file_utc_time <= end_time:
                             tmp_dict = {}
                             tmp_dict[tmp_file] = row
-
                             screenshot_to_events.append(tmp_dict)
-
 
 
             logger.info(f"result => {screenshot_to_events}")
 
             logger.info(f"Upload response time_specific => {response.json()}")
+            screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots")
+            if not os.path.isdir(screenshot_folder):
+                os.makedirs(screenshot_folder)
 
-            # capture_time =  datetime.now(timezone.utc)
+            max_row = max(screenshot_to_events, key=lambda x: list(x.values())[0]['duration'])
+            tmp_file = list(max_row.keys())[0]
+            screenshot_path = os.path.join(screenshot_folder, Path(tmp_file).name)
+            shutil.copy2(tmp_file, screenshot_path)  
+            capture_time =  datetime.now(timezone.utc)
 
-            # payload = {
-            #     'file_location': screenshot_path,
-            #     'is_idle_screenshot': self.is_idle_screenshot,
-            #     'created_at': capture_time.isoformat()
-            # }          
 
-            # response = requests.post(self.server_url, json=payload)
-            # response.raise_for_status() # Raise an exception for bad status codes
-            # logger.info(f"Upload response time_specific => {response.json()}")
+            for tmp_file_data in filename_list:
+                os.remove(tmp_file_data)
+
+            payload = {
+                'file_location': screenshot_path,
+                'is_idle_screenshot': self.is_idle_screenshot,
+                'created_at': capture_time.isoformat(),
+                'event_id': list(max_row.values())[0].get('id')
+            }          
+
+            response = requests.post(self.server_url, json=payload)
+            response.raise_for_status() # Raise an exception for bad status codes
+            logger.info(f"Upload response time_specific => {response.json()}")
 
         except requests.exceptions.RequestException as req_e:
             logger.error(f"Error during API request: {req_e}")
