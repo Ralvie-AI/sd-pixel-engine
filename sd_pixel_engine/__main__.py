@@ -1,5 +1,5 @@
-import argparse
 from datetime import time
+import argparse
 
 from sd_core.log import setup_logging
 from sd_pixel_engine.screenshot import ScreenShot
@@ -19,7 +19,7 @@ def parse_days(value):
         return [int(v) for v in value.split(",")]
     except ValueError:
         raise argparse.ArgumentTypeError("Days must be comma-separated integers (e.g. 0,1,2,3,4)")
-    
+
 def str2bool(v):
     if isinstance(v, bool):
         return v
@@ -32,13 +32,12 @@ def str2bool(v):
     
 def main():
 
-    # Set up logging
+     # Set up logging
     setup_logging(
         "sd-pixel-engine",
         log_stderr=True,
         log_file=True,
     )
-
     parser = argparse.ArgumentParser(description="Screenshot uploader")
     parser.add_argument("--server_url", required=True, help="URL to upload screenshots")
     parser.add_argument("--user_id", required=True, help="User ID for identification")
@@ -52,22 +51,25 @@ def main():
                         help="Enable idle screenshots (true/false, default=False)")
     parser.add_argument("--tracking_interval", type=int, default=0, help="Tracking Intervalr")
 
-    args = parser.parse_args()    
+    args = parser.parse_args()
 
     screenshot = ScreenShot(
         server_url=args.server_url,
         user_id=args.user_id,
         start_time=args.start_hour,
         end_time=args.end_hour,
+        # times_per_hour= 20 ,
         times_per_hour=args.times_per_hour,
         days=args.days,
-        is_idle_screenshot=args.is_idle_screenshot        
+        is_idle_screenshot=args.is_idle_screenshot
     )
-
+    
     if args.tracking_interval == 0:
         screenshot.run_always()
     else:
         screenshot.run()
+
+
 
 if __name__ == '__main__':
     main()

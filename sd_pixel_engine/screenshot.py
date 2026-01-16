@@ -1,12 +1,19 @@
 import logging
 import os
-import subprocess
-from time import sleep as time_sleep
+from time import sleep as  time_sleep
+import logging
+import platform
+import signal
+
 from datetime import datetime, time, timedelta, timezone
 
-import requests
 from mss import mss
 from PIL import Image
+import requests
+import subprocess
+
+from sd_main.sd_desktop.monitor import stop_process, get_running_process_id
+
 
 os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
@@ -18,10 +25,6 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
 )
 
-def stop_process_by_exe(exe_name, time_sleep=0.2):
-    logger.info(f"killing start cmd_name {exe_name}")
-    subprocess.run(f"taskkill /F /IM {exe_name}", shell=True)
-    time.sleep(time_sleep)  # wait 200ms for process cleanup
 
 class ScreenShot:
     def __init__(self, server_url, user_id, start_time=time(0, 0), 
@@ -41,14 +44,12 @@ class ScreenShot:
         self.days = days
         self.is_idle_screenshot = is_idle_screenshot
         self.interval = 3600 / times_per_hour  # seconds between screenshots
-
     
     def _next_run_datetime(self, now: datetime) -> datetime:
         """
         Always returns the next valid execution datetime,
         correctly handling cross-midnight schedules forever.
         """
-
         interval = timedelta(seconds=self.interval)
 
         today_start = datetime.combine(now.date(), self.start_time)
@@ -60,9 +61,8 @@ class ScreenShot:
 
         # If before start → first slot
         if now < today_start:
-            return today_start
+            return today_start    
 
-        # If within window → next aligned slot
         if today_start <= now <= today_end:
             elapsed = (now - today_start).total_seconds()
             slots_passed = int(elapsed // self.interval) + 1
@@ -79,14 +79,38 @@ class ScreenShot:
             # Cross-midnight window
             return now >= self.start_time or now <= self.end_time
     
+    def _log_today_schedule(self, now: datetime):
+        slots = []
+
+        current = datetime.combine(now.date(), self.start_time)
+        today_end = datetime.combine(now.date(), self.end_time)
+
+        # cross-midnight
+        if self.end_time <= self.start_time:
+            today_end += timedelta(days=1)
+
+        interval = timedelta(seconds=self.interval)
+
+        while current <= today_end:
+            slots.append(current.strftime("%H:%M:%S"))
+            current += interval
+
+        logger.info(f"Times => {slots}")
+
+    
     def run(self):
         logger.info("Screenshot scheduler started (cross-midnight safe)")
+        last_logged_date = None
 
         while True:
             now = datetime.now()
-
             # Determine which day the schedule belongs to
             schedule_day = now.date()
+
+            if now.date() != last_logged_date:
+                last_logged_date = now.date()
+                self._log_today_schedule(now)
+
             if self.end_time <= self.start_time and now.time() <= self.end_time:
                 schedule_day -= timedelta(days=1)
 
@@ -110,49 +134,63 @@ class ScreenShot:
             time(0, 0)
         )
         time_sleep((tomorrow - datetime.now()).total_seconds())
-    
+
+            
+
     def _take_screenshot(self, screenshot_folder=None):
+        system = platform.system()
 
         if screenshot_folder is None:
-            screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots")
+            if system == "Darwin":
+                screenshot_folder = os.path.join(
+                    os.path.expanduser("~"),
+                    "Library", "Application Support", "Sundial", "Screenshots"
+                )
 
         if not os.path.isdir(screenshot_folder):
             os.makedirs(screenshot_folder)
 
         # Generate a timestamp for the filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        output_file = f"{screenshot_folder}/screenshot_{timestamp}.png"
 
-        # The mss library handles the screenshot capture
-        # with mss() as sct:
-        #     sct.shot(output=output_file)
-        
         with mss() as sct:
+            # for i, m in enumerate(sct.monitors):
+            #     logger.info(f"Monitor {i}: {m}")
+            # sct.shot(output=output_file)
             monitor = sct.monitors[0]  # all monitors combined
             screenshot = sct.grab(monitor)
-            img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+
+            img = Image.frombytes(
+                "RGB",
+                screenshot.size,
+                screenshot.rgb
+            )
             img.save(output_file)
 
         return output_file
-    
+
     def _scheduled_job(self):
         try:           
-            now_time = datetime.now().time().replace(second=0, microsecond=0)
-            if not self._is_within_time_window(now_time):
+            now_time = datetime.now().replace(microsecond=0).time()
+            logger.info(f"now_time {now_time}")
+            if not self._is_within_time_window(now_time):               
                 logger.warning(f"Job triggered outside of schedule time: {now_time}")
-                stop_process_by_exe("sd-pixel-engine.exe")
+                screenshot_pid = get_running_process_id("sd-pixel-engine")
+                stop_process(screenshot_pid)
                 return
-           
+            
             logger.info("Scheduled screenshot triggered")
 
             screenshot_path = self._take_screenshot()
             capture_time =  datetime.now(timezone.utc)
 
+
             payload = {
                 'file_location': screenshot_path,
                 'is_idle_screenshot': self.is_idle_screenshot,
                 'created_at': capture_time.isoformat()
-            }          
+            }
 
             response = requests.post(self.server_url, json=payload)
             response.raise_for_status() # Raise an exception for bad status codes
@@ -161,11 +199,10 @@ class ScreenShot:
         except requests.exceptions.RequestException as req_e:
             logger.error(f"Error during API request: {req_e}")
         except Exception as e:
-            logger.error(f"Error in scheduled job: {e}")
-
-
+            logger.error(f"Error in scheduled job: {e}") 
+    
     # Always Option Tracking Interval
-
+    
     def _next_anchored_time(self, now: datetime) -> datetime:
         
         interval = timedelta(seconds=3600 / self.times_per_hour)
@@ -180,9 +217,9 @@ class ScreenShot:
         intervals_passed = int(elapsed.total_seconds() // interval.total_seconds()) + 1
 
         return today_start + interval * intervals_passed
+
     
     def run_always(self):
-
         logger.info(
             f"Anchored mode: {self.times_per_hour} screenshots/hour "
             f"(every {int(3600 / self.times_per_hour)} seconds)"
@@ -192,8 +229,7 @@ class ScreenShot:
         logger.info(f"First anchored screenshot at {next_run.strftime('%H:%M:%S')}")
 
         while True:
-
-            try:
+            try:  
                 now = datetime.now()
 
                 sleep_seconds = (next_run - now).total_seconds()
@@ -204,13 +240,11 @@ class ScreenShot:
 
                 screenshot_path = self._take_screenshot()
                 capture_time = datetime.now(timezone.utc)
-
                 payload = {
                     "file_location": screenshot_path,
                     "is_idle_screenshot": self.is_idle_screenshot,
                     "created_at": capture_time.isoformat(),
                 }
-
                 response = requests.post(self.server_url, json=payload)
                 response.raise_for_status()
 
@@ -222,13 +256,11 @@ class ScreenShot:
                 # Safety re-align (sleep / lag)
                 if next_run <= datetime.now():
                     next_run = self._next_anchored_time(datetime.now())
-
             except requests.exceptions.RequestException as req_e:
                 logger.error(f"API error: {req_e}")
                 time_sleep(10)
-
             except Exception as e:
                 logger.error(f"Anchored scheduler error: {e}")
                 time_sleep(10)
 
-    
+
