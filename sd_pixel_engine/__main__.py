@@ -1,34 +1,15 @@
+import os 
 import argparse
+import shutil
+import logging 
 from datetime import time
 
 from sd_core.log import setup_logging
 from sd_pixel_engine.screenshot import ScreenShot
-# from screenshot import ScreenShot
+from sd_pixel_engine.const import SCREENSHOT_FOLDER
+from sd_pixel_engine.utils import parse_time, parse_days, str2bool
 
-def parse_time(value: str) -> time:
-    try:
-        hour, minute = map(int, value.split(":"))
-        return time(hour, minute)
-    except ValueError:
-        raise argparse.ArgumentTypeError(
-            f"Invalid time format: '{value}'. Use HH:MM (e.g., 09:00)"
-        )
-
-def parse_days(value):
-    try:
-        return [int(v) for v in value.split(",")]
-    except ValueError:
-        raise argparse.ArgumentTypeError("Days must be comma-separated integers (e.g. 0,1,2,3,4)")
-    
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    elif v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected (true/false).")
+logger = logging.getLogger(__name__)
     
 def main():
 
@@ -52,7 +33,13 @@ def main():
                         help="Enable idle screenshots (true/false, default=False)")
     parser.add_argument("--tracking_interval", type=int, default=0, help="Tracking Intervalr")
 
-    args = parser.parse_args()    
+    args = parser.parse_args()
+
+    screenshot_folder = SCREENSHOT_FOLDER.format(user_id=args.user_id)   
+    if os.path.exists(screenshot_folder):
+        # logger.info(f"deleteing screenshot_folder => {screenshot_folder}")
+        shutil.rmtree(screenshot_folder)
+
 
     screenshot = ScreenShot(
         server_url=args.server_url,

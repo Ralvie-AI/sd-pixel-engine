@@ -1,5 +1,8 @@
-from datetime import datetime, timezone
 import re
+import argparse
+from datetime import time
+from datetime import datetime, timezone
+
 
 # filename: "0a07029c9a901fe0819abf69dca12c0d_2026-01-14T00-55-52.905552Z.png"
 # '2026-01-14 00:55:52.905552'
@@ -32,6 +35,32 @@ def add_second_to_utc(date_time, seconds):
     print(type(a), a)
     print(type(b), b)
     return a, b
+
+
+def parse_time(value: str) -> time:
+    try:
+        hour, minute = map(int, value.split(":"))
+        return time(hour, minute)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"Invalid time format: '{value}'. Use HH:MM (e.g., 09:00)"
+        )
+
+def parse_days(value):
+    try:
+        return [int(v) for v in value.split(",")]
+    except ValueError:
+        raise argparse.ArgumentTypeError("Days must be comma-separated integers (e.g. 0,1,2,3,4)")
+    
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected (true/false).")
 
 
 if __name__ == '__main__':
