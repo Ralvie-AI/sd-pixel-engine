@@ -19,11 +19,11 @@ os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-)
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+#     datefmt='%Y-%m-%d %H:%M:%S',
+# )
 
 def stop_process_by_exe(exe_name, time_sleep_time=0.2):
     logger.info(f"killing start cmd_name {exe_name}")
@@ -159,31 +159,7 @@ class ScreenShot:
             img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
             img.save(output_file)
 
-        return output_file
-    
-    def _take_screenshot(self, screenshot_folder=None):
-
-        if screenshot_folder is None:
-            screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots")
-
-        if not os.path.isdir(screenshot_folder):
-            os.makedirs(screenshot_folder)
-
-        # Generate a timestamp for the filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
-
-        # The mss library handles the screenshot capture
-        # with mss() as sct:
-        #     sct.shot(output=output_file)
-        
-        with mss() as sct:
-            monitor = sct.monitors[0]  # all monitors combined
-            screenshot = sct.grab(monitor)
-            img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
-            img.save(output_file)
-
-        return output_file
+        return output_file   
     
     def _scheduled_job(self):
         try:           
@@ -194,70 +170,14 @@ class ScreenShot:
                 return
            
             logger.info("Scheduled screenshot triggered")
-
-            # screenshot_path = self._take_screenshot()
-            
-            screenshot_folder_user = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots", self.user_id)
-            filename_list = glob(os.path.join(screenshot_folder_user, "*.png"))
-            filename_list_tmp = sorted(filename_list, reverse=False)
-            if len(filename_list_tmp) == 1: 
-                start_time = get_image_name_to_utc(filename_list_tmp[0])
-                end_time = get_image_name_to_utc(filename_list_tmp[0])
-            else:
-                start_time = get_image_name_to_utc(filename_list_tmp[0])
-                end_time = get_image_name_to_utc(filename_list_tmp[-1])
-
-            payload = {
-                'start_time': start_time,
-                'end_time': end_time,               
-            }
-
-            logger.info(f"payload info => {payload}")
-            response = requests.post(self.server_url + "get_event_time_range", json=payload)
-            response.raise_for_status() # Raise an exception for bad status codes
-
-            logger.info(f"Upload response time_specific => {response.json()}")
-            response_result_tmp = response.json()
-            # logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
-            response_result = json.loads(response_result_tmp["result"])
-            # logger.info(f"response_result => {type(response_result)}")
-            logger.info(f"response_result => {response_result}")
-            screenshot_to_events = []
-            if response_result:
-                for tmp_file in filename_list_tmp:
-                    file_utc_time = get_image_name_to_utc(tmp_file)
-                    # logger.info(f"file_utc_time => {file_utc_time}")
-                    
-                    for row in response_result:
-                        start_time, end_time = add_second_to_utc(row.get('timestamp'), row.get('duration'))
-                        if start_time <= file_utc_time <= end_time:
-                            tmp_dict = {}
-                            tmp_dict[tmp_file] = row
-                            screenshot_to_events.append(tmp_dict)
-
-
-            logger.info(f"result => {screenshot_to_events}")
-
-            logger.info(f"Upload response time_specific => {response.json()}")
-            screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots")
-            if not os.path.isdir(screenshot_folder):
-                os.makedirs(screenshot_folder)
-
-            max_row = max(screenshot_to_events, key=lambda x: list(x.values())[0]['duration'])
-            tmp_file = list(max_row.keys())[0]
-            screenshot_path = os.path.join(screenshot_folder, Path(tmp_file).name)
-            shutil.copy2(tmp_file, screenshot_path)  
             capture_time =  datetime.now(timezone.utc)
 
-
-            for tmp_file_data in filename_list:
-                os.remove(tmp_file_data)
-
+            screenshot_path, event_id = self.get_image_path_and_event_id()
             payload = {
                 'file_location': screenshot_path,
                 'is_idle_screenshot': self.is_idle_screenshot,
                 'created_at': capture_time.isoformat(),
-                'event_id': list(max_row.values())[0].get('id')
+                'event_id': event_id
             }          
 
             response = requests.post(self.server_url, json=payload)
@@ -269,7 +189,63 @@ class ScreenShot:
         except Exception as e:
             logger.error(f"Error in scheduled job: {e}")
 
+    def get_image_path_and_event_id(self):
+        screenshot_folder_user = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots", self.user_id)
+        filename_list = glob(os.path.join(screenshot_folder_user, "*.png"))
+        filename_list_tmp = sorted(filename_list, reverse=False)
+        if len(filename_list_tmp) == 1: 
+            start_time = get_image_name_to_utc(filename_list_tmp[0])
+            end_time = get_image_name_to_utc(filename_list_tmp[0])
+        else:
+            start_time = get_image_name_to_utc(filename_list_tmp[0])
+            end_time = get_image_name_to_utc(filename_list_tmp[-1])
 
+        payload = {
+            'start_time': start_time,
+            'end_time': end_time,               
+        }
+
+        logger.info(f"payload info => {payload}")
+        response = requests.post(self.server_url + "get_event_time_range", json=payload)
+        response.raise_for_status() # Raise an exception for bad status codes
+
+        logger.info(f"Upload response time_specific => {response.json()}")
+        response_result_tmp = response.json()
+        # logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
+        response_result = json.loads(response_result_tmp["result"])
+        # logger.info(f"response_result => {type(response_result)}")
+        logger.info(f"response_result => {response_result}")
+        screenshot_to_events = []
+        if response_result:
+            for tmp_file in filename_list_tmp:
+                file_utc_time = get_image_name_to_utc(tmp_file)
+                # logger.info(f"file_utc_time => {file_utc_time}")
+                
+                for row in response_result:
+                    start_time, end_time = add_second_to_utc(row.get('timestamp'), row.get('duration'))
+                    if start_time <= file_utc_time <= end_time:
+                        tmp_dict = {}
+                        tmp_dict[tmp_file] = row
+                        screenshot_to_events.append(tmp_dict)
+
+
+        logger.info(f"result => {screenshot_to_events}")
+
+        logger.info(f"Upload response time_specific => {response.json()}")
+        screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots")
+        if not os.path.isdir(screenshot_folder):
+            os.makedirs(screenshot_folder)
+
+        max_row = max(screenshot_to_events, key=lambda x: list(x.values())[0]['duration'])
+        tmp_file = list(max_row.keys())[0]
+        screenshot_path = os.path.join(screenshot_folder, Path(tmp_file).name)
+        shutil.copy2(tmp_file, screenshot_path)
+
+        for tmp_file_data in filename_list:
+            os.remove(tmp_file_data)        
+
+        return screenshot_path, list(max_row.values())[0].get('id')
+    
     # Always Option Tracking Interval
 
     def _next_anchored_time(self, now: datetime) -> datetime:
@@ -289,7 +265,6 @@ class ScreenShot:
     
    
     def run_always(self):
-
         logger.info(
             f"Anchored mode: {self.times_per_hour} screenshots/hour "
             f"(every {int(3600 / self.times_per_hour)} seconds)"
@@ -304,28 +279,33 @@ class ScreenShot:
                 now = datetime.now()
 
                 sleep_seconds = (next_run - now).total_seconds()
-                if sleep_seconds > 0:
-                    time_sleep(sleep_seconds)
-
+                while sleep_seconds > 0:
+                    self._take_screenshot_30_seconds()
+                    # sleep 30s or remaining time (whichever is smaller)
+                    sleep_chunk = min(30, sleep_seconds)
+                    logger.info(f"sleep_chunk => {sleep_chunk}")
+                    time_sleep(sleep_chunk)
+                    sleep_seconds -= sleep_chunk
+                    
                 logger.info("Taking anchored screenshot")
 
-                screenshot_path = self._take_screenshot()
-                capture_time = datetime.now(timezone.utc)
+                capture_time =  datetime.now(timezone.utc)
 
+                screenshot_path, event_id = self.get_image_path_and_event_id()
                 payload = {
-                    "file_location": screenshot_path,
-                    "is_idle_screenshot": self.is_idle_screenshot,
-                    "created_at": capture_time.isoformat(),
-                }
+                    'file_location': screenshot_path,
+                    'is_idle_screenshot': self.is_idle_screenshot,
+                    'created_at': capture_time.isoformat(),
+                    'event_id': event_id
+                }          
 
                 response = requests.post(self.server_url, json=payload)
-                response.raise_for_status()
-
-                logger.info(f"Upload response => {response.json()}")
+                response.raise_for_status() # Raise an exception for bad status codes
+                logger.info(f"Upload response always => {response.json()}")              
 
                 # Move to next anchored slot
                 next_run += timedelta(seconds=3600 / self.times_per_hour)
-
+                logger.info(f"First anchored screenshot at bbb {next_run.strftime('%H:%M:%S')}")
                 # Safety re-align (sleep / lag)
                 if next_run <= datetime.now():
                     next_run = self._next_anchored_time(datetime.now())
