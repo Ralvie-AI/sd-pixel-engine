@@ -124,50 +124,7 @@ class ScreenShot:
                 logger.info(f"sleep_time INTERVAL {sleep_time} seconds")
                 time_sleep(sleep_time)
 
-            self._scheduled_job()
-    
-    def run_old(self):
-        logger.info("Screenshot scheduler started (cross-midnight safe)")
-
-        while True:
-            now = datetime.now()
-
-            # Determine which day the schedule belongs to
-            schedule_day = now.date()
-            if self.end_time <= self.start_time and now.time() <= self.end_time:
-                schedule_day -= timedelta(days=1)
-
-            if schedule_day.weekday() not in self.days:
-                logger.info("Schedule day not allowed. Sleeping until next day.")
-                self._sleep_until_next_day()
-                continue
-
-            next_run = self._next_run_datetime(now)
-            logger.info(f"next run => {next_run}")
-            sleep_seconds = (next_run - now).total_seconds()
-            logger.info(f"sleep_seconds => {sleep_seconds}")            
-            
-            INTERVAL = 30
-            if sleep_seconds > 0:
-                logger.info(f"Next screenshot at {next_run}")
-                
-                time_taken_shot = 0
-                logger.info(f"time_taken_shot 0 => {time_taken_shot}")
-                while True:
-                    if time_taken_shot > sleep_seconds:
-                        break 
-                    time_taken_shot += INTERVAL
-                    start_time = time_perf_counter()
-                    self._take_screenshot_30_seconds()      
-                    end_time = time_perf_counter()
-                    duration = end_time - start_time
-                    logger.info(f"Function took {duration:.4f} seconds to run.")              
-                    logger.info(f"time_taken_shot 1 => {time_taken_shot}")
-                    time_sleep(INTERVAL)
-
-                time_sleep(sleep_seconds)
-
-            self._scheduled_job()
+            self._scheduled_job()   
 
     def _sleep_until_next_day(self):
         tomorrow = datetime.combine(
@@ -261,15 +218,15 @@ class ScreenShot:
 
             logger.info(f"Upload response time_specific => {response.json()}")
             response_result_tmp = response.json()
-            logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
+            # logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
             response_result = json.loads(response_result_tmp["result"])
-            logger.info(f"response_result => {type(response_result)}")
+            # logger.info(f"response_result => {type(response_result)}")
             logger.info(f"response_result => {response_result}")
             screenshot_to_events = []
             if response_result:
                 for tmp_file in filename_list_tmp:
                     file_utc_time = get_image_name_to_utc(tmp_file)
-                    logger.info(f"file_utc_time => {file_utc_time}")
+                    # logger.info(f"file_utc_time => {file_utc_time}")
                     
                     for row in response_result:
                         start_time, end_time = add_second_to_utc(row.get('timestamp'), row.get('duration'))
@@ -330,6 +287,7 @@ class ScreenShot:
 
         return today_start + interval * intervals_passed
     
+   
     def run_always(self):
 
         logger.info(
