@@ -1,17 +1,20 @@
 import logging
 import os
-from time import sleep as  time_sleep
+from time import sleep as  time_sleep, perf_counter as time_perf_counter
 import logging
 import platform
 import signal
+import json
 
 from datetime import datetime, time, timedelta, timezone
+from glob import glob
 
 from mss import mss
 from PIL import Image
 import requests
 import subprocess
 
+from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc
 from sd_main.sd_desktop.monitor import stop_process, get_running_process_id
 
 
@@ -96,10 +99,56 @@ class ScreenShot:
             current += interval
 
         logger.info(f"Times => {slots}")
-
     
     def run(self):
         logger.info("Screenshot scheduler started (cross-midnight safe)")
+
+        INTERVAL = 30
+        last_logged_date = None
+
+        while True:
+            now = datetime.now()
+
+            # Determine schedule day (cross-midnight safe)
+            schedule_day = now.date()
+            if now.date() != last_logged_date:
+                last_logged_date = now.date()
+                self._log_today_schedule(now)
+
+            if self.end_time <= self.start_time and now.time() <= self.end_time:
+                schedule_day -= timedelta(days=1)
+
+            if schedule_day.weekday() not in self.days:
+                logger.info("Schedule day not allowed. Sleeping until next day.")
+                self._sleep_until_next_day()
+                continue
+
+            next_run = self._next_run_datetime(now)
+            logger.info(f"next run => {next_run}")
+
+            while True:
+                now = datetime.now()
+
+                if now >= next_run:
+                    break
+
+                start_time = time_perf_counter()
+                self._take_screenshot_30_seconds()
+                duration = time_perf_counter() - start_time
+
+                logger.info(f"Screenshot took {duration:.4f} seconds")
+
+                # sleep only remaining time in interval
+                sleep_time = max(0, INTERVAL - duration)
+                logger.info(f"sleep_time INTERVAL {sleep_time} seconds")
+                time_sleep(sleep_time)
+
+            self._scheduled_job()
+
+    
+    def run_old(self):
+        logger.info("Screenshot scheduler started (cross-midnight safe)")
+        
         last_logged_date = None
 
         while True:
@@ -134,6 +183,38 @@ class ScreenShot:
             time(0, 0)
         )
         time_sleep((tomorrow - datetime.now()).total_seconds())
+
+    # 2026-01-13 06:58:16.823000+00:00 UTC Time
+    # 2026-01-13T06-58-16.823000Z.png
+    def _take_screenshot_30_seconds(self, screenshot_folder=None):
+        system = platform.system()
+        if screenshot_folder is None:
+            if system == "Darwin":
+                screenshot_folder = os.path.join(
+                    os.path.expanduser("~"),
+                    "Library", "Application Support", "Sundial", "Screenshots", self.user_id
+                )
+
+        if not os.path.isdir(screenshot_folder):
+            os.makedirs(screenshot_folder)
+
+        # Generate a timestamp for the filename
+        utc_now = datetime.now(timezone.utc)
+        timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
+
+        output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
+
+        # The mss library handles the screenshot capture
+        # with mss() as sct:
+        #     sct.shot(output=output_file)
+        
+        with mss() as sct:
+            monitor = sct.monitors[0]  # all monitors combined
+            screenshot = sct.grab(monitor)
+            img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+            img.save(output_file)
+
+        return output_file
 
             
 
@@ -182,18 +263,80 @@ class ScreenShot:
             
             logger.info("Scheduled screenshot triggered")
 
-            screenshot_path = self._take_screenshot()
-            capture_time =  datetime.now(timezone.utc)
-
+            # screenshot_path = self._take_screenshot()
+            # capture_time =  datetime.now(timezone.utc)
+            screenshot_folder = os.path.join(
+                    os.path.expanduser("~"),
+                    "Library", "Application Support", "Sundial", "Screenshots", self.user_id
+                )
+            filename_list = glob(os.path.join(screenshot_folder, "*.png"))
+            filename_list_tmp = sorted(filename_list, reverse=False)
+            if not filename_list_tmp:
+                logger.warning("No screenshots found in folder")
+                return
+            logger.info(f"filename_list_tmp[0] => {filename_list_tmp[0]}")
+            logger.info(f"filename_list_tmp[-1] => {filename_list_tmp[-1]}")
+            start_time = get_image_name_to_utc(filename_list_tmp[0])
+            end_time = get_image_name_to_utc(filename_list_tmp[-1])
 
             payload = {
-                'file_location': screenshot_path,
-                'is_idle_screenshot': self.is_idle_screenshot,
-                'created_at': capture_time.isoformat()
+                'start_time': start_time,
+                'end_time': end_time,               
             }
 
-            response = requests.post(self.server_url, json=payload)
+            # payload = {
+            #     'file_location': screenshot_path,
+            #     'is_idle_screenshot': self.is_idle_screenshot,
+            #     'created_at': capture_time.isoformat()
+            # }
+
+            # response = requests.post(self.server_url, json=payload)
+            # response.raise_for_status() # Raise an exception for bad status codes
+            # logger.info(f"Upload response time_specific => {response.json()}")
+            logger.info(f"payload info => {payload}")
+            response = requests.post(self.server_url + "get_event_time_range", json=payload)
             response.raise_for_status() # Raise an exception for bad status codes
+
+            logger.info(f"Upload response time_specific => {response.json()}")
+            response_result = response.json()
+            raw_result = response_result.get("result")
+
+            if not raw_result:
+                logger.info("No events returned for this time range")
+                return
+
+            if isinstance(raw_result, str):
+                try:
+                    events = json.loads(raw_result)
+                except Exception as e:
+                    logger.error(f"Failed to parse result JSON: {e}")
+                    return
+            else:
+                events = raw_result
+
+            if not isinstance(events, list):
+                logger.error(f"Unexpected result type: {type(events)}")
+                return
+            
+            screenshot_to_events = []
+
+            for tmp_file in filename_list_tmp:
+                file_utc_time = get_image_name_to_utc(tmp_file)
+
+                for row in events:
+                    start_time, end_time = add_second_to_utc(
+                        row.get("timestamp"),
+                        row.get("duration")
+                    )
+
+                    if start_time <= file_utc_time <= end_time:
+                        screenshot_to_events.append({
+                            "screenshot": tmp_file,
+                            "event": row
+                        })
+
+            logger.info(f"result => {screenshot_to_events}")
+
             logger.info(f"Upload response time_specific => {response.json()}")
 
         except requests.exceptions.RequestException as req_e:
