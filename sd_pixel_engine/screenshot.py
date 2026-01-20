@@ -1,19 +1,17 @@
 import logging
 import os
 import json
-import subprocess
 import shutil
 from pathlib import Path
+from glob import glob
 from time import sleep as time_sleep, perf_counter as time_perf_counter
 from datetime import datetime, time, timedelta, timezone
-from glob import glob
-
 
 import requests
 from mss import mss
 from PIL import Image
 
-from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc
+from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop_process_by_exe
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
 
 os.environ.pop('HTTP_PROXY', None)
@@ -21,11 +19,6 @@ os.environ.pop('HTTPS_PROXY', None)
 
 logger = logging.getLogger(__name__)
 
-
-def stop_process_by_exe(exe_name, time_sleep_time=0.2):
-    logger.info(f"killing start cmd_name {exe_name}")
-    subprocess.run(f"taskkill /F /IM {exe_name}", shell=True)
-    time_sleep(time_sleep_time)  # wait 200ms for process cleanup
 
 class ScreenShot:
     def __init__(self, server_url, user_id, start_time=time(0, 0), 

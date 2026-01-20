@@ -1,6 +1,12 @@
 import re
+import subprocess
+import logging
 import argparse
 from datetime import datetime, timezone, timedelta, time
+from time import sleep as time_sleep
+
+
+logger = logging.getLogger(__name__)
 
 # filename: "0a07029c9a901fe0819abf69dca12c0d_2026-01-14T00-55-52.905552Z.png"
 # '2026-01-14 00:55:52.905552'
@@ -54,6 +60,10 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError("Boolean value expected (true/false).")
 
+def stop_process_by_exe(exe_name, time_sleep_time=0.2):
+    logger.info(f"killing start cmd_name {exe_name}")
+    subprocess.run(f"taskkill /F /IM {exe_name}", shell=True)
+    time_sleep(time_sleep_time)  # wait 200ms for process cleanup
 
 if __name__ == '__main__':
     # add_second_to_utc("2026-01-14 06:49:15.373000+00:00", 2.015)
