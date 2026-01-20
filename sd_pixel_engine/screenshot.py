@@ -96,8 +96,8 @@ class ScreenShot:
 
             if schedule_day.weekday() not in self.days:
                 logger.info("Schedule day not allowed. Sleeping until next day.")
-                self._sleep_until_next_day()
-                continue
+                stop_process_by_exe("sd-pixel-engine.exe")
+                break
 
             next_run = self._next_run_datetime(now)
             logger.info(f"next run => {next_run}")
