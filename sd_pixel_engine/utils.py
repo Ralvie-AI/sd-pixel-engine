@@ -1,8 +1,6 @@
 import re
 import argparse
-from datetime import time
-from datetime import datetime, timezone
-
+from datetime import datetime, timezone, timedelta, time
 
 # filename: "0a07029c9a901fe0819abf69dca12c0d_2026-01-14T00-55-52.905552Z.png"
 # '2026-01-14 00:55:52.905552'
@@ -16,8 +14,6 @@ def get_image_name_to_utc(filename : str) -> str:
 
 
 def add_second_to_utc(date_time, seconds):
-    from datetime import datetime, timedelta
-
     # 1. Define your starting timestamp string
     timestamp_str = date_time
 
@@ -28,13 +24,9 @@ def add_second_to_utc(date_time, seconds):
     # 3. Add 9.095 seconds using timedelta
     new_dt = dt + timedelta(seconds=seconds)
 
-    print(f"Original: {dt}")
-    print(f"New Time: {new_dt}")
-    a = dt.strftime("%Y-%m-%d %H:%M:%S.%f")
-    b = new_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
-    print(type(a), a)
-    print(type(b), b)
-    return a, b
+    timestamp = dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+    added_duration_timestamp = new_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+    return timestamp, added_duration_timestamp
 
 
 def parse_time(value: str) -> time:
