@@ -1,5 +1,8 @@
-from datetime import datetime, timezone
+
 import re
+import argparse
+from datetime import datetime, timezone, timedelta, time
+
 
 # filename: "0a07029c9a901fe0819abf69dca12c0d_2026-01-14T00-55-52.905552Z.png"
 # '2026-01-14 00:55:52.905552'
@@ -13,7 +16,6 @@ def get_image_name_to_utc(filename : str) -> str:
 
 
 def add_second_to_utc(date_time, seconds):
-    from datetime import datetime, timedelta
 
     # 1. Define your starting timestamp string
     timestamp_str = date_time
@@ -25,14 +27,34 @@ def add_second_to_utc(date_time, seconds):
     # 3. Add 9.095 seconds using timedelta
     new_dt = dt + timedelta(seconds=seconds)
 
-    print(f"Original: {dt}")
-    print(f"New Time: {new_dt}")
-    a = dt.strftime("%Y-%m-%d %H:%M:%S.%f")
-    b = new_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
-    print(type(a), a)
-    print(type(b), b)
-    return a, b
+    timestamp = dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+    added_duration_timestamp = new_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+    return timestamp, added_duration_timestamp
 
+def parse_time(value: str) -> time:
+    try:
+        hour, minute = map(int, value.split(":"))
+        return time(hour, minute)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"Invalid time format: '{value}'. Use HH:MM (e.g., 09:00)"
+        )
+
+def parse_days(value):
+    try:
+        return [int(v) for v in value.split(",")]
+    except ValueError:
+        raise argparse.ArgumentTypeError("Days must be comma-separated integers (e.g. 0,1,2,3,4)")
+    
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("yes", "true", "t", "y", "1"):
+        return True
+    elif v.lower() in ("no", "false", "f", "n", "0"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected (true/false).")
 
 if __name__ == '__main__':
     # add_second_to_utc("2026-01-14 06:49:15.373000+00:00", 2.015)
