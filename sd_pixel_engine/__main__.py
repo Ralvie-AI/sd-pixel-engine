@@ -30,14 +30,7 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError("Boolean value expected (true/false).")
     
-def main():
-
-    # Set up logging
-    setup_logging(
-        "sd-pixel-engine",
-        log_stderr=True,
-        log_file=True,
-    )
+def main():   
 
     parser = argparse.ArgumentParser(description="Screenshot uploader")
     parser.add_argument("--server_url", required=True, help="URL to upload screenshots")
@@ -52,7 +45,14 @@ def main():
                         help="Enable idle screenshots (true/false, default=False)")
     parser.add_argument("--tracking_interval", type=int, default=0, help="Tracking Intervalr")
 
-    args = parser.parse_args()    
+    args = parser.parse_args()
+
+     # Set up logging
+    setup_logging(
+        "sd-pixel-engine",
+        log_stderr=True,
+        log_file=True,
+    )
 
     screenshot = ScreenShot(
         server_url=args.server_url,
