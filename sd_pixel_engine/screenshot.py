@@ -98,6 +98,7 @@ class ScreenShot:
             next_run = self._next_run_datetime(now)
             logger.info(f"next run => {next_run}")
             sleep_seconds = (next_run - now).total_seconds()
+            
             if sleep_seconds > 0:
                 logger.info(f"Next screenshot at {next_run}")
                 time_sleep(sleep_seconds)
@@ -166,6 +167,18 @@ class ScreenShot:
 
     # Always Option Tracking Interval
 
+    def _sleep_until(self, target: datetime):
+
+        while True:
+            now = datetime.now()
+            remaining = (target - now).total_seconds()
+
+            if remaining <= 0:
+                return
+            
+            # Sleep in small chunks (max 60s)
+            time_sleep(min(60, remaining))
+
     def _next_anchored_time(self, now: datetime) -> datetime:
         
         interval = timedelta(seconds=3600 / self.times_per_hour)
@@ -182,23 +195,20 @@ class ScreenShot:
         return today_start + interval * intervals_passed
     
     def run_always(self):
-
+        
         logger.info(
             f"Anchored mode: {self.times_per_hour} screenshots/hour "
             f"(every {int(3600 / self.times_per_hour)} seconds)"
         )
 
+        interval = timedelta(seconds=3600 / self.times_per_hour)
         next_run = self._next_anchored_time(datetime.now())
+
         logger.info(f"First anchored screenshot at {next_run.strftime('%H:%M:%S')}")
 
         while True:
-
             try:
-                now = datetime.now()
-
-                sleep_seconds = (next_run - now).total_seconds()
-                if sleep_seconds > 0:
-                    time_sleep(sleep_seconds)
+                self._sleep_until(next_run)
 
                 logger.info("Taking anchored screenshot")
 
@@ -216,11 +226,12 @@ class ScreenShot:
 
                 logger.info(f"Upload response => {response.json()}")
 
-                # Move to next anchored slot
-                next_run += timedelta(seconds=3600 / self.times_per_hour)
+                # Move to next slot
+                next_run += interval
 
-                # Safety re-align (sleep / lag)
-                if next_run <= datetime.now():
+                # FULL re-anchor if system slept too long
+                if next_run < datetime.now() - interval:
+                    logger.warning("Detected sleep/hibernate — re-anchoring scheduler")
                     next_run = self._next_anchored_time(datetime.now())
 
             except requests.exceptions.RequestException as req_e:
@@ -228,7 +239,6 @@ class ScreenShot:
                 time_sleep(10)
 
             except Exception as e:
-                logger.error(f"Anchored scheduler error: {e}")
+                logger.exception("Anchored scheduler error")
                 time_sleep(10)
-
-    
+                
