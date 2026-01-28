@@ -1,6 +1,11 @@
 
 import re
 import argparse
+import Quartz
+from AppKit import NSScreen
+from mss import mss
+from PIL import Image
+
 from datetime import datetime, timezone, timedelta, time
 
 
@@ -13,6 +18,13 @@ def get_image_name_to_utc(filename : str) -> str:
     result = dt_utc.strftime("%Y-%m-%d %H:%M:%S.%f")
 
     return result 
+
+def get_image_name_to_utc_dt(filename: str) -> datetime:
+    ts_part = re.sub(r"^[^_]+_|\.png$", "", filename)
+    return datetime.strptime(
+        ts_part,
+        "%Y-%m-%dT%H-%M-%S.%fZ"
+    ).replace(tzinfo=timezone.utc)
 
 
 def add_second_to_utc(date_time, seconds):
@@ -55,6 +67,158 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError("Boolean value expected (true/false).")
+    
+def get_main_screen_bounds():
+    """
+    Return main screen bounds as MSS-compatible dict
+    """
+    screen = NSScreen.mainScreen().frame()
+    return {
+        "left": int(screen.origin.x),
+        "top": int(screen.origin.y),
+        "width": int(screen.size.width),
+        "height": int(screen.size.height),
+    }
+
+
+def clamp_region(region, screen):
+    """
+    Clamp window bounds to screen bounds.
+    Return None if the window does not overlap the screen at all.
+    """
+    left = max(region["left"], screen["left"])
+    top = max(region["top"], screen["top"])
+
+    right = min(
+        region["left"] + region["width"],
+        screen["left"] + screen["width"],
+    )
+    bottom = min(
+        region["top"] + region["height"],
+        screen["top"] + screen["height"],
+    )
+
+    width = right - left
+    height = bottom - top
+
+    if width <= 0 or height <= 0:
+        return None
+
+    return {
+        "left": int(left),
+        "top": int(top),
+        "width": int(width),
+        "height": int(height),
+    }
+
+
+def get_active_window_bounds():
+    """
+    Get the current active on-screen window bounds using Quartz.
+    Return None if no active window exists (empty desktop).
+    """
+    window_list = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly,
+        Quartz.kCGNullWindowID
+    )
+
+    for win in window_list:
+        if not win.get("kCGWindowIsOnscreen"):
+            continue
+        if win.get("kCGWindowLayer") != 0:
+            continue
+
+        bounds = win.get("kCGWindowBounds")
+        if not bounds:
+            continue
+
+        return {
+            "left": int(bounds["X"]),
+            "top": int(bounds["Y"]),
+            "width": int(bounds["Width"]),
+            "height": int(bounds["Height"]),
+            "owner": win.get("kCGWindowOwnerName", "unknown"),
+        }
+
+    return None
+
+def is_bad_mss_capture(img, win, screen):
+    """
+    Detect broken MSS captures on macOS fullscreen apps
+    """
+    if img.height < screen["height"] * 0.25:
+        return True
+
+    if (
+        win
+        and win["width"] >= screen["width"] * 0.95
+        and win["height"] >= screen["height"] * 0.95
+        and img.height < screen["height"] * 0.9
+    ):
+        return True
+
+    return False
+
+
+def capture_active_window_screenshot(output_file: str):
+    """
+    Smart screenshot:
+    1) Active window (MSS)
+    2) Fullscreen app fallback
+    3) Empty desktop
+    """
+    screen = get_main_screen_bounds()
+    win = get_active_window_bounds()
+
+    # -------------------------------------------------
+    # Case 3: Empty desktop
+    # -------------------------------------------------
+    if not win:
+        image = Quartz.CGDisplayCreateImage(Quartz.CGMainDisplayID())
+        if image:
+            url = Quartz.CFURLCreateWithFileSystemPath(
+                None, output_file, Quartz.kCFURLPOSIXPathStyle, False
+            )
+            dest = Quartz.CGImageDestinationCreateWithURL(
+                url, "public.png", 1, None
+            )
+            Quartz.CGImageDestinationAddImage(dest, image, None)
+            Quartz.CGImageDestinationFinalize(dest)
+        return
+
+    # -------------------------------------------------
+    # Case 1: Active window (MSS)
+    # -------------------------------------------------
+    region = clamp_region(win, screen)
+
+    if region:
+        try:
+            with mss() as sct:
+                grab = sct.grab(region)
+
+                if is_bad_mss_capture(grab, win, screen):
+                    raise RuntimeError("Bad MSS capture")
+
+                img = Image.frombytes("RGB", grab.size, grab.rgb)
+                img.save(output_file)
+                return
+        except Exception:
+            pass
+
+    # -------------------------------------------------
+    # Case 2: Fullscreen fallback
+    # -------------------------------------------------
+    image = Quartz.CGDisplayCreateImage(Quartz.CGMainDisplayID())
+    if image:
+        url = Quartz.CFURLCreateWithFileSystemPath(
+            None, output_file, Quartz.kCFURLPOSIXPathStyle, False
+        )
+        dest = Quartz.CGImageDestinationCreateWithURL(
+            url, "public.png", 1, None
+        )
+        Quartz.CGImageDestinationAddImage(dest, image, None)
+        Quartz.CGImageDestinationFinalize(dest)
+
 
 if __name__ == '__main__':
     # add_second_to_utc("2026-01-14 06:49:15.373000+00:00", 2.015)

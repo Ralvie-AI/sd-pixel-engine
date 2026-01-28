@@ -11,12 +11,11 @@ from pathlib import Path
 from datetime import datetime, time, timedelta, timezone
 from glob import glob
 
-from mss import mss
 from PIL import Image
 import requests
 import subprocess
 
-from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc
+from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, capture_active_window_screenshot
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
 from sd_main.sd_desktop.monitor import stop_process, get_running_process_id
 
@@ -165,16 +164,9 @@ class ScreenShot:
         timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
 
         output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
-
-        # The mss library handles the screenshot capture
-        # with mss() as sct:
-        #     sct.shot(output=output_file)
         
-        with mss() as sct:
-            monitor = sct.monitors[0]  # all monitors combined
-            screenshot = sct.grab(monitor)
-            img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
-            img.save(output_file)
+        # Active window screenshot (3 conditions handled)
+        capture_active_window_screenshot(output_file)
 
         return output_file
 
@@ -239,7 +231,7 @@ class ScreenShot:
             os.makedirs(SCREENSHOT_FOLDER)
 
         screenshot_to_events = []
-        if response_result:
+        if len(response_result) > 1:
             for tmp_file in filename_list_tmp:
                 file_utc_time = get_image_name_to_utc(tmp_file)
                 # logger.info(f"file_utc_time => {file_utc_time}")
