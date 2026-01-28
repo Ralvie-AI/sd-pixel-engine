@@ -1,9 +1,12 @@
+import threading
 import argparse
 from datetime import time
 
 from sd_core.log import setup_logging
 from sd_pixel_engine.screenshot import ScreenShot
 # from screenshot import ScreenShot
+
+from sd_pixel_engine.detect_sleep import create_hidden_power_listener
 
 def parse_time(value: str) -> time:
     try:
@@ -70,4 +73,8 @@ def main():
         screenshot.run()
 
 if __name__ == '__main__':
+
+    detect_sleep_thread = threading.Thread(target=create_hidden_power_listener,daemon=True)
+    detect_sleep_thread.start()
+
     main()

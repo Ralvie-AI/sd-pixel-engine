@@ -8,6 +8,9 @@ import requests
 from mss import mss
 from PIL import Image
 
+from sd_pixel_engine.utils import stop_process_by_exe
+
+
 os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
 
@@ -18,10 +21,6 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
 )
 
-def stop_process_by_exe(exe_name, time_sleep=0.2):
-    logger.info(f"killing start cmd_name {exe_name}")
-    subprocess.run(f"taskkill /F /IM {exe_name}", shell=True)
-    time.sleep(time_sleep)  # wait 200ms for process cleanup
 
 class ScreenShot:
     def __init__(self, server_url, user_id, start_time=time(0, 0), 
