@@ -7,9 +7,12 @@ from glob import glob
 from time import sleep as time_sleep, perf_counter as time_perf_counter
 from datetime import datetime, time, timedelta, timezone
 
+
 import requests
 from mss import mss
 from PIL import Image
+import pygetwindow as gw
+import pyautogui
 
 from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop_process_by_exe
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
@@ -128,6 +131,35 @@ class ScreenShot:
         if screenshot_folder is None:
             screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
 
+        if not os.path.isdir(screenshot_folder):
+            os.makedirs(screenshot_folder)
+
+        active_win = gw.getActiveWindow()
+
+        if active_win is not None and active_win.title != "":
+            # 2. Get coordinates (X, Y, Width, Height)
+            x, y, w, h = active_win.left, active_win.top, active_win.width, active_win.height
+            
+            # 3. Create a unique filename based on time
+            utc_now = datetime.now(timezone.utc)
+            timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
+            output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
+           
+            # 4. Capture only the region of that window
+            # Ensure coordinates are within screen bounds to avoid errors
+            if w > 0 and h > 0:
+                screenshot = pyautogui.screenshot(region=(x, y, w, h))
+                screenshot.save(output_file)
+                logger.info(f"Captured '{active_win.title}' at {timestamp}")
+                return output_file
+        else:
+            logger.info("No active window detected. Skipping...")
+
+    def _take_screenshot_30_seconds_old(self, screenshot_folder=None):
+
+        if screenshot_folder is None:
+            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
+
 
         if not os.path.isdir(screenshot_folder):
             os.makedirs(screenshot_folder)
@@ -210,7 +242,7 @@ class ScreenShot:
             os.makedirs(SCREENSHOT_FOLDER)
 
         screenshot_to_events = []
-        if response_result:
+        if response_result and len(response_result) > 1:
             for tmp_file in filename_list_tmp:
                 file_utc_time = get_image_name_to_utc(tmp_file)
                 # logger.info(f"file_utc_time => {file_utc_time}")
