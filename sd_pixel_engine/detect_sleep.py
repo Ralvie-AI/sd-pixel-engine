@@ -12,8 +12,8 @@ from sd_pixel_engine.utils import stop_process_by_exe
 last_sleep_time = None          # datetime when we received PBT_APMSUSPEND
 # SLEEP_THRESHOLD = 48 * 3600     # 48 hours in seconds
 # SLEEP_THRESHOLD = 24 * 3600     # 48 hours in seconds
-# SLEEP_THRESHOLD = 1800     # 30 minutes
-SLEEP_THRESHOLD = 900     # 15  minutes
+SLEEP_THRESHOLD = 1800     # 30 minutes
+# SLEEP_THRESHOLD = 900     # 15  minutes
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +49,15 @@ def wnd_proc(hwnd, msg, wparam, lparam):
         ts = datetime.now().strftime("%H:%M:%S")
 
         if wparam == win32con.PBT_APMSUSPEND:
-            logger.info(f"System is going to sleep")
             last_sleep_time = datetime.now()          # ← key moment
+            logger.info(f"System is going to sleep => {last_sleep_time}")
+            
 
         elif wparam == win32con.PBT_APMRESUMEAUTOMATIC:
-            logger.info(f"Automatic resume")
+            logger.info(f"Automatic resume => {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
         elif wparam == win32con.PBT_APMRESUMESUSPEND:
-            logger.info(f"Resume + user present")
+            logger.info(f"Resume + user present => {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             if is_long_sleep():
                 on_long_sleep_detected()
 
