@@ -311,7 +311,7 @@ class ScreenShot:
                     self._take_screenshot_30_seconds()
                     # sleep 30s or remaining time (whichever is smaller)
                     sleep_chunk = min(INTERVAL, sleep_seconds)
-                    logger.info(f"sleep_chunk => {sleep_chunk}")
+                    # logger.info(f"sleep_chunk => {sleep_chunk}")
                     time_sleep(sleep_chunk)
                     sleep_seconds -= sleep_chunk
 
@@ -344,5 +344,3 @@ class ScreenShot:
             except Exception as e:
                 logger.error(f"Anchored scheduler error: {e}")
                 time_sleep(10)
-
-
