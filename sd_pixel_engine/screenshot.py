@@ -258,6 +258,10 @@ class ScreenShot:
                 # Safety re-align (sleep / lag)
                 if next_run <= datetime.now():
                     next_run = self._next_anchored_time(datetime.now())
+                    
+                # shot_time = datetime.now()
+                # next_run = shot_time + timedelta(seconds=3600 / self.times_per_hour)
+
             except requests.exceptions.RequestException as req_e:
                 logger.error(f"API error: {req_e}")
                 time_sleep(10)
