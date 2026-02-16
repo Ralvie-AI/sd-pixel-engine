@@ -282,8 +282,10 @@ class ScreenShot:
             for tmp_file_data in filename_list:
                 os.remove(tmp_file_data) 
             logger.info(f"idle time screenshot_path => {screenshot_path}")
-            logger.info(f"idle time event_id => {response_result_tmp.get('event_id')}")
-            return screenshot_path, response_result_tmp.get('event_id')
+            logger.info(f"idle time response_result => {response_result}")
+            event_id = response_result[0].get('id')
+            logger.info(f"idle time event_id => {event_id}")
+            return screenshot_path, event_id
 
     
     # Always Option Tracking Interval
