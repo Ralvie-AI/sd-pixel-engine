@@ -231,7 +231,7 @@ class ScreenShot:
             os.makedirs(SCREENSHOT_FOLDER)
 
         screenshot_to_events = []
-        if len(response_result) > 1:
+        if response_result:
             for tmp_file in filename_list_tmp:
                 file_utc_time = get_image_name_to_utc(tmp_file)
                 # logger.info(f"file_utc_time => {file_utc_time}")
@@ -245,6 +245,22 @@ class ScreenShot:
 
 
             logger.info(f"result => {screenshot_to_events}")
+            
+            if not screenshot_to_events:
+                logger.info("No screenshot matched event range. Fallback to last event.")
+
+                last_event = response_result[-1]
+                tmp_file = filename_list_tmp[-1]
+
+                screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
+                shutil.copy2(tmp_file, screenshot_path)
+
+                for tmp_file_data in filename_list:
+                    os.remove(tmp_file_data)
+
+                logger.info(f"fallback screenshot_path => {screenshot_path}")
+                logger.info(f"fallback event_id => {last_event.get('id')}")
+                return screenshot_path, last_event.get("id")
         
             max_row = max(screenshot_to_events, key=lambda x: list(x.values())[0]['duration'])
             tmp_file = list(max_row.keys())[0]
