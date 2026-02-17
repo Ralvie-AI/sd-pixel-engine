@@ -232,10 +232,12 @@ class ScreenShot:
 
         logger.info(f"Upload response time_specific => {response.json()}")
         response_result_tmp = response.json()
+        logger.info(f"response_result_tmp => {type(response_result_tmp)}")
         # logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
         response_result = json.loads(response_result_tmp["result"])
         # logger.info(f"response_result => {type(response_result)}")
         logger.info(f"response_result => {response_result}")
+        logger.info(f"response_result type => {type(response_result)}")
 
 
         if not os.path.isdir(SCREENSHOT_FOLDER):
@@ -281,10 +283,16 @@ class ScreenShot:
 
             for tmp_file_data in filename_list:
                 os.remove(tmp_file_data) 
+            
             logger.info(f"idle time screenshot_path => {screenshot_path}")
-            logger.info(f"idle time response_result => {response_result}")
-            event_id = response_result[0].get('id')
-            logger.info(f"idle time event_id => {event_id}")
+            if response_result:
+                logger.info(f"idle time response_result => {response_result}")
+                event_id = response_result[0].get('id')
+                logger.info(f"idle time event_id => {event_id}")
+            else:
+                if isinstance(response_result_tmp, dict):
+                    event_id = response_result_tmp.get('event_id')
+                    logger.info(f"idle time event_id => {event_id}")
             return screenshot_path, event_id
 
     
