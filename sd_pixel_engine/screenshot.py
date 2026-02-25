@@ -256,10 +256,32 @@ class ScreenShot:
                         tmp_dict[tmp_file] = row
                         screenshot_to_events.append(tmp_dict)
 
-            logger.info(f"result => {screenshot_to_events}")            
+            logger.info(f"result => {screenshot_to_events}")
 
-            max_row = max(screenshot_to_events, key=lambda x: list(x.values())[0]['duration'])
-            tmp_file = list(max_row.keys())[0]
+            event_id = 0
+            if screenshot_to_events:
+                max_row = max(screenshot_to_events, key=lambda x: list(x.values())[0]['duration'])
+                tmp_file = list(max_row.keys())[0]
+                event_id = list(max_row.values())[0].get('id')
+
+                logger.info(f"tmp_file => {tmp_file}")
+                logger.info(f"event_id => {event_id}")
+            else:
+                # Get the maximum duration if there is no mapped between events time and 
+                # screenshot capture time.
+                # Get the latest screenshot if there are more than one screenshots.
+
+                max_row = max(response_result, key=lambda x: x['duration'])
+                event_id = max_row.get('id')
+        
+                if len(filename_list_tmp) > 1:
+                    tmp_file = filename_list_tmp[-1]
+                else:
+                    tmp_file = filename_list_tmp[0]
+
+                logger.info(f"tmp_file => {tmp_file}")
+                logger.info(f"event_id => {event_id}")
+
             screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
             shutil.copy2(tmp_file, screenshot_path)
 
@@ -267,8 +289,7 @@ class ScreenShot:
                 os.remove(tmp_file_data)        
 
             logger.info(f"screenshot_path => {screenshot_path}")
-            logger.info(f"event_id => {list(max_row.values())[0].get('id')}")
-            return screenshot_path, list(max_row.values())[0].get('id')
+            return screenshot_path, event_id
         
         else: 
             # it will work for idle time
