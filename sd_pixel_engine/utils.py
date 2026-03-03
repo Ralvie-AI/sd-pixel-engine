@@ -70,6 +70,13 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError("Boolean value expected (true/false).")
+
+EXCLUDED_OWNERS = {
+    "Window Server",
+    "Dock",
+    "Control Center",
+    "Notification Center"
+}
     
 def get_main_screen_bounds():
     """
@@ -130,9 +137,16 @@ def get_active_window_bounds():
     )
 
     for win in window_list:
+
         if not win.get("kCGWindowIsOnscreen"):
             continue
+
         if win.get("kCGWindowLayer") != 0:
+            continue
+
+        owner = win.get("kCGWindowOwnerName", "")
+
+        if owner in EXCLUDED_OWNERS:
             continue
 
         bounds = win.get("kCGWindowBounds")
@@ -144,13 +158,13 @@ def get_active_window_bounds():
             "top": int(bounds["Y"]),
             "width": int(bounds["Width"]),
             "height": int(bounds["Height"]),
-            "owner": win.get("kCGWindowOwnerName", "unknown"),
+            "owner": owner,
         }
 
         logger.info(f"[WINDOW] Active window detected: {result}")
         return result
 
-    logger.warning("[WINDOW] No active window found")
+    logger.warning("[WINDOW] No valid active window found")
     return None
 
 def is_bad_mss_capture(img, win, screen):
