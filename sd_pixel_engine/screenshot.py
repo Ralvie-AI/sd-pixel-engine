@@ -127,6 +127,62 @@ class ScreenShot:
     # 2026-01-13 06:58:16.823000+00:00 UTC Time
     # 2026-01-13T06-58-16.823000Z.png
     def _take_screenshot_30_seconds(self, screenshot_folder=None):
+        
+        if screenshot_folder is None:
+            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
+
+        os.makedirs(screenshot_folder, exist_ok=True)
+
+        try:
+            utc_now = datetime.now(timezone.utc)
+            timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
+            output_file = os.path.join(
+                screenshot_folder,
+                f"{self.user_id}_{timestamp}.png"
+            )           
+
+            with mss() as sct:
+
+                active_win = gw.getActiveWindow()
+
+                # -------------------------------------------------
+                # CASE 1: Capture active window region
+                # -------------------------------------------------
+                if active_win and active_win.title:
+                    x, y = active_win.left, active_win.top
+                    w, h = active_win.width, active_win.height
+
+                    if w > 0 and h > 0:
+                        monitor = {
+                            "left": x,
+                            "top": y,
+                            "width": w,
+                            "height": h
+                        }
+
+                        sct_img = sct.grab(monitor)
+                        img = Image.frombytes("RGB", sct_img.size, sct_img.rgb)
+                        img.save(output_file)
+
+                        logger.info(f"Captured active window '{active_win.title}'")
+                        return output_file
+
+                # -------------------------------------------------
+                # CASE 2: Full multi-monitor capture (fallback)
+                # -------------------------------------------------
+                # monitor[0] = virtual screen (ALL monitors)
+                sct_img = sct.grab(sct.monitors[0])
+                img = Image.frombytes("RGB", sct_img.size, sct_img.rgb)
+                img.save(output_file)
+
+                logger.info("Captured full virtual screen (fallback)")
+                return output_file
+
+        except Exception as e:
+            logger.error(f"MSS screenshot capture failed: {e}")
+            return None
+    
+    def _take_screenshot_30_seconds_list_index_out_of_range_error(self, screenshot_folder=None):
 
         if screenshot_folder is None:
             screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
