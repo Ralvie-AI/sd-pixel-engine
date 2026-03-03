@@ -1,4 +1,4 @@
-
+import logging
 import re
 import argparse
 import Quartz
@@ -7,6 +7,9 @@ from mss import mss
 from PIL import Image
 
 from datetime import datetime, timezone, timedelta, time
+
+
+logger = logging.getLogger(__name__)
 
 
 # filename: "0a07029c9a901fe0819abf69dca12c0d_2026-01-14T00-55-52.905552Z.png"
@@ -73,12 +76,14 @@ def get_main_screen_bounds():
     Return main screen bounds as MSS-compatible dict
     """
     screen = NSScreen.mainScreen().frame()
-    return {
+    bounds = {
         "left": int(screen.origin.x),
         "top": int(screen.origin.y),
         "width": int(screen.size.width),
         "height": int(screen.size.height),
     }
+    logger.info(f"[SCREEN] Main screen bounds: {bounds}")
+    return bounds
 
 
 def clamp_region(region, screen):
@@ -86,6 +91,8 @@ def clamp_region(region, screen):
     Clamp window bounds to screen bounds.
     Return None if the window does not overlap the screen at all.
     """
+    logger.info(f"[CLAMP] Before clamp: {region}")
+
     left = max(region["left"], screen["left"])
     top = max(region["top"], screen["top"])
 
@@ -102,21 +109,21 @@ def clamp_region(region, screen):
     height = bottom - top
 
     if width <= 0 or height <= 0:
+        logger.warning("[CLAMP] Window does not overlap screen")
         return None
 
-    return {
+    clamped = {
         "left": int(left),
         "top": int(top),
         "width": int(width),
         "height": int(height),
     }
 
+    logger.info(f"[CLAMP] After clamp: {clamped}")
+    return clamped
+
 
 def get_active_window_bounds():
-    """
-    Get the current active on-screen window bounds using Quartz.
-    Return None if no active window exists (empty desktop).
-    """
     window_list = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly,
         Quartz.kCGNullWindowID
@@ -132,7 +139,7 @@ def get_active_window_bounds():
         if not bounds:
             continue
 
-        return {
+        result = {
             "left": int(bounds["X"]),
             "top": int(bounds["Y"]),
             "width": int(bounds["Width"]),
@@ -140,13 +147,22 @@ def get_active_window_bounds():
             "owner": win.get("kCGWindowOwnerName", "unknown"),
         }
 
+        logger.info(f"[WINDOW] Active window detected: {result}")
+        return result
+
+    logger.warning("[WINDOW] No active window found")
     return None
 
 def is_bad_mss_capture(img, win, screen):
     """
     Detect broken MSS captures on macOS fullscreen apps
     """
+    logger.info(f"[MSS] Grab size: {img.width}x{img.height}")
+    logger.info(f"[MSS] Screen size: {screen['width']}x{screen['height']}")
+    logger.info(f"[MSS] Window size: {win['width']}x{win['height']}")
+
     if img.height < screen["height"] * 0.25:
+        logger.warning("[MSS] Height < 25% of screen → BAD capture")
         return True
 
     if (
@@ -155,6 +171,7 @@ def is_bad_mss_capture(img, win, screen):
         and win["height"] >= screen["height"] * 0.95
         and img.height < screen["height"] * 0.9
     ):
+        logger.warning("[MSS] Fullscreen-like window but capture too small → BAD")
         return True
 
     return False
@@ -174,6 +191,7 @@ def capture_active_window_screenshot(output_file: str):
     # Case 3: Empty desktop
     # -------------------------------------------------
     if not win:
+        logger.info("[CASE 3] No active window → Capture full screen (Quartz)")
         image = Quartz.CGDisplayCreateImage(Quartz.CGMainDisplayID())
         if image:
             url = Quartz.CFURLCreateWithFileSystemPath(
@@ -193,6 +211,7 @@ def capture_active_window_screenshot(output_file: str):
 
     if region:
         try:
+            logger.info("[CASE 1] Trying MSS capture")
             with mss() as sct:
                 grab = sct.grab(region)
 
@@ -208,6 +227,7 @@ def capture_active_window_screenshot(output_file: str):
     # -------------------------------------------------
     # Case 2: Fullscreen fallback
     # -------------------------------------------------
+    logger.info("[CASE 2] Fallback → Quartz full screen capture")
     image = Quartz.CGDisplayCreateImage(Quartz.CGMainDisplayID())
     if image:
         url = Quartz.CFURLCreateWithFileSystemPath(
