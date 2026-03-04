@@ -17,6 +17,9 @@ import pyautogui
 from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop_process_by_exe
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
 
+from sd_pixel_engine.utils import stop_process_by_exe
+
+
 os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
 
@@ -93,10 +96,15 @@ class ScreenShot:
             if schedule_day.weekday() not in self.days:
                 logger.info("Schedule day not allowed. Sleeping until next day.")
                 stop_process_by_exe("sd-pixel-engine.exe")
-                break
+                break                
 
             next_run = self._next_run_datetime(now)
             logger.info(f"next run => {next_run}")
+            sleep_seconds = (next_run - now).total_seconds()
+            
+            if sleep_seconds > 0:
+                logger.info(f"Next screenshot at {next_run}")
+                time_sleep(sleep_seconds)
 
             while True:
                 now = datetime.now()
@@ -375,6 +383,18 @@ class ScreenShot:
     
     # Always Option Tracking Interval
 
+    def _sleep_until(self, target: datetime):
+
+        while True:
+            now = datetime.now()
+            remaining = (target - now).total_seconds()
+
+            if remaining <= 0:
+                return
+            
+            # Sleep in small chunks (max 60s)
+            time_sleep(min(60, remaining))
+
     def _next_anchored_time(self, now: datetime) -> datetime:
         
         interval = timedelta(seconds=3600 / self.times_per_hour)
@@ -397,11 +417,12 @@ class ScreenShot:
             f"(every {int(3600 / self.times_per_hour)} seconds)"
         )
 
+        interval = timedelta(seconds=3600 / self.times_per_hour)
         next_run = self._next_anchored_time(datetime.now())
+
         logger.info(f"First anchored screenshot at {next_run.strftime('%H:%M:%S')}")
 
         while True:
-
             try:
                 now = datetime.now()
 
@@ -442,5 +463,5 @@ class ScreenShot:
                 time_sleep(10)
 
             except Exception as e:
-                logger.error(f"Anchored scheduler error: {e}")
+                logger.exception("Anchored scheduler error")
                 time_sleep(10)
