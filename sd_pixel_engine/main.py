@@ -2,12 +2,14 @@ import os
 import argparse
 import shutil
 import logging 
+import threading
 from datetime import time
 
 from sd_core.log import setup_logging
 from sd_pixel_engine.screenshot import ScreenShot
 from sd_pixel_engine.const import SCREENSHOT_FOLDER_USER
 from sd_pixel_engine.utils import parse_time, parse_days, str2bool
+from sd_pixel_engine.detect_sleep import create_hidden_power_listener
 
 logger = logging.getLogger(__name__)
     
@@ -52,4 +54,7 @@ def main():
         screenshot.run()
 
 if __name__ == '__main__':
+    detect_sleep_thread = threading.Thread(target=create_hidden_power_listener,daemon=True)
+    detect_sleep_thread.start()
+
     main()
