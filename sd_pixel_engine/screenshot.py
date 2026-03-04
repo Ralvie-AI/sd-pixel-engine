@@ -1,12 +1,21 @@
 import logging
 import os
-import subprocess
-from time import sleep as time_sleep
+import json
+import shutil
+from pathlib import Path
+from glob import glob
+from time import sleep as time_sleep, perf_counter as time_perf_counter
 from datetime import datetime, time, timedelta, timezone
+
 
 import requests
 from mss import mss
 from PIL import Image
+import pygetwindow as gw
+import pyautogui
+
+from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop_process_by_exe
+from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
 
 from sd_pixel_engine.utils import stop_process_by_exe
 
@@ -15,11 +24,6 @@ os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-)
 
 
 class ScreenShot:
@@ -77,14 +81,14 @@ class ScreenShot:
         else:
             # Cross-midnight window
             return now >= self.start_time or now <= self.end_time
-    
+        
     def run(self):
-        logger.info("Screenshot scheduler started (cross-midnight safe)")
+        logger.info("Screenshot scheduler started (cross-midnight safe)")        
 
         while True:
             now = datetime.now()
 
-            # Determine which day the schedule belongs to
+            # Determine schedule day (cross-midnight safe)
             schedule_day = now.date()
             if self.end_time <= self.start_time and now.time() <= self.end_time:
                 schedule_day -= timedelta(days=1)
@@ -102,7 +106,24 @@ class ScreenShot:
                 logger.info(f"Next screenshot at {next_run}")
                 time_sleep(sleep_seconds)
 
-            self._scheduled_job()
+            while True:
+                now = datetime.now()
+
+                if now >= next_run:
+                    break
+
+                start_time = time_perf_counter()
+                self._take_screenshot_30_seconds()
+                duration = time_perf_counter() - start_time
+
+                logger.info(f"Screenshot took {duration:.4f} seconds")
+
+                # sleep only remaining time in interval
+                # sleep_time = max(0, INTERVAL - duration)
+                # logger.info(f"sleep_time INTERVAL {sleep_time} seconds")
+                time_sleep(INTERVAL)
+
+            self._scheduled_job()   
 
     def _sleep_until_next_day(self):
         tomorrow = datetime.combine(
@@ -111,16 +132,106 @@ class ScreenShot:
         )
         time_sleep((tomorrow - datetime.now()).total_seconds())
     
-    def _take_screenshot(self, screenshot_folder=None):
+    # 2026-01-13 06:58:16.823000+00:00 UTC Time
+    # 2026-01-13T06-58-16.823000Z.png
+    def _take_screenshot_30_seconds(self, screenshot_folder=None):
+        
+        if screenshot_folder is None:
+            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
+
+        os.makedirs(screenshot_folder, exist_ok=True)
+
+        try:
+            utc_now = datetime.now(timezone.utc)
+            timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
+            output_file = os.path.join(
+                screenshot_folder,
+                f"{self.user_id}_{timestamp}.png"
+            )           
+
+            with mss() as sct:
+
+                active_win = gw.getActiveWindow()
+
+                # -------------------------------------------------
+                # CASE 1: Capture active window region
+                # -------------------------------------------------
+                if active_win and active_win.title:
+                    x, y = active_win.left, active_win.top
+                    w, h = active_win.width, active_win.height
+
+                    if w > 0 and h > 0:
+                        monitor = {
+                            "left": x,
+                            "top": y,
+                            "width": w,
+                            "height": h
+                        }
+
+                        sct_img = sct.grab(monitor)
+                        img = Image.frombytes("RGB", sct_img.size, sct_img.rgb)
+                        img.save(output_file)
+
+                        logger.info(f"Captured active window '{active_win.title}'")
+                        return output_file
+
+                # -------------------------------------------------
+                # CASE 2: Full multi-monitor capture (fallback)
+                # -------------------------------------------------
+                # monitor[0] = virtual screen (ALL monitors)
+                sct_img = sct.grab(sct.monitors[0])
+                img = Image.frombytes("RGB", sct_img.size, sct_img.rgb)
+                img.save(output_file)
+
+                logger.info("Captured full virtual screen (fallback)")
+                return output_file
+
+        except Exception as e:
+            logger.error(f"MSS screenshot capture failed: {e}")
+            return None
+    
+    def _take_screenshot_30_seconds_list_index_out_of_range_error(self, screenshot_folder=None):
 
         if screenshot_folder is None:
-            screenshot_folder = os.path.join(os.environ['LOCALAPPDATA'], "Sundial", "Sundial", "Screenshots")
+            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
+
+        if not os.path.isdir(screenshot_folder):
+            os.makedirs(screenshot_folder)
+
+        active_win = gw.getActiveWindow()
+
+        if active_win is not None and active_win.title != "":
+            # 2. Get coordinates (X, Y, Width, Height)
+            x, y, w, h = active_win.left, active_win.top, active_win.width, active_win.height
+            
+            # 3. Create a unique filename based on time
+            utc_now = datetime.now(timezone.utc)
+            timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
+            output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
+           
+            # 4. Capture only the region of that window
+            # Ensure coordinates are within screen bounds to avoid errors
+            if w > 0 and h > 0:
+                screenshot = pyautogui.screenshot(region=(x, y, w, h))
+                screenshot.save(output_file)
+                logger.info(f"Captured '{active_win.title}' at {timestamp}")
+                return output_file
+        else:
+            logger.info("No active window detected. Skipping...")
+
+    def _take_screenshot_30_seconds_old(self, screenshot_folder=None):
+
+        if screenshot_folder is None:
+            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
+
 
         if not os.path.isdir(screenshot_folder):
             os.makedirs(screenshot_folder)
 
         # Generate a timestamp for the filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        utc_now = datetime.now(timezone.utc)
+        timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
+
         output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
 
         # The mss library handles the screenshot capture
@@ -133,7 +244,7 @@ class ScreenShot:
             img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
             img.save(output_file)
 
-        return output_file
+        return output_file   
     
     def _scheduled_job(self):
         try:           
@@ -144,14 +255,14 @@ class ScreenShot:
                 return
            
             logger.info("Scheduled screenshot triggered")
-
-            screenshot_path = self._take_screenshot()
             capture_time =  datetime.now(timezone.utc)
 
+            screenshot_path, event_id = self.get_image_path_and_event_id()
             payload = {
                 'file_location': screenshot_path,
                 'is_idle_screenshot': self.is_idle_screenshot,
-                'created_at': capture_time.isoformat()
+                'created_at': capture_time.isoformat(),
+                'event_id': event_id
             }          
 
             response = requests.post(self.server_url, json=payload)
@@ -163,7 +274,113 @@ class ScreenShot:
         except Exception as e:
             logger.error(f"Error in scheduled job: {e}")
 
+    def get_image_path_and_event_id(self):
+        screenshot_folder_user = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
+        filename_list = glob(os.path.join(screenshot_folder_user, "*.png"))
+        filename_list_tmp = sorted(filename_list, reverse=False)
+        if len(filename_list_tmp) == 1: 
+            start_time = get_image_name_to_utc(filename_list_tmp[0])
+            end_time = get_image_name_to_utc(filename_list_tmp[0])
+        else:
+            start_time = get_image_name_to_utc(filename_list_tmp[0])
+            end_time = get_image_name_to_utc(filename_list_tmp[-1])
 
+        payload = {
+            'start_time': start_time,
+            'end_time': end_time,               
+        }
+
+        logger.info(f"payload info => {payload}")
+        response = requests.post(self.server_url + "get_event_time_range", json=payload)
+        response.raise_for_status() # Raise an exception for bad status codes
+
+        logger.info(f"Upload response time_specific => {response.json()}")
+        response_result_tmp = response.json()
+        logger.info(f"response_result_tmp => {type(response_result_tmp)}")
+        # logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
+        response_result = json.loads(response_result_tmp["result"])
+        # logger.info(f"response_result => {type(response_result)}")
+        logger.info(f"response_result => {response_result}")
+        logger.info(f"response_result type => {type(response_result)}")
+
+
+        if not os.path.isdir(SCREENSHOT_FOLDER):
+            os.makedirs(SCREENSHOT_FOLDER)
+
+        screenshot_to_events = []
+        if response_result and len(response_result) > 1:
+            for tmp_file in filename_list_tmp:
+                file_utc_time = get_image_name_to_utc(tmp_file)
+                # logger.info(f"file_utc_time => {file_utc_time}")
+                
+                for row in response_result:
+                    start_time, end_time = add_second_to_utc(row.get('timestamp'), row.get('duration'))
+                    if start_time <= file_utc_time <= end_time:
+                        tmp_dict = {}
+                        tmp_dict[tmp_file] = row
+                        screenshot_to_events.append(tmp_dict)
+
+            logger.info(f"result => {screenshot_to_events}")
+
+            event_id = 0
+            if screenshot_to_events:
+                max_row = max(screenshot_to_events, key=lambda x: list(x.values())[0]['duration'])
+                tmp_file = list(max_row.keys())[0]
+                event_id = list(max_row.values())[0].get('id')
+
+                logger.info(f"tmp_file => {tmp_file}")
+                logger.info(f"event_id => {event_id}")
+            else:
+                # Get the maximum duration if there is no mapped between events time and 
+                # screenshot capture time.
+                # Get the latest screenshot if there are more than one screenshots.
+
+                max_row = max(response_result, key=lambda x: x['duration'])
+                event_id = max_row.get('id')
+        
+                if len(filename_list_tmp) > 1:
+                    tmp_file = filename_list_tmp[-1]
+                else:
+                    tmp_file = filename_list_tmp[0]
+
+                logger.info(f"tmp_file => {tmp_file}")
+                logger.info(f"event_id => {event_id}")
+
+            screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
+            shutil.copy2(tmp_file, screenshot_path)
+
+            for tmp_file_data in filename_list:
+                os.remove(tmp_file_data)        
+
+            logger.info(f"screenshot_path => {screenshot_path}")
+            return screenshot_path, event_id
+        
+        else: 
+            # it will work for idle time
+            # {'start_time': '2026-01-20 01:30:16.221777', 'end_time': '2026-01-20 01:44:51.125691'}
+            # when the result of start time and end time are not in the range of screenshot image file name.
+            # so screenshot_path will be used the lastest screenshot and
+            # event_id will be used from the latest event row.
+            
+            tmp_file = filename_list_tmp[-1]
+            screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
+            shutil.copy2(tmp_file, screenshot_path)
+
+            for tmp_file_data in filename_list:
+                os.remove(tmp_file_data) 
+            
+            logger.info(f"idle time screenshot_path => {screenshot_path}")
+            if response_result:
+                logger.info(f"idle time response_result => {response_result}")
+                event_id = response_result[0].get('id')
+                logger.info(f"idle time event_id => {event_id}")
+            else:
+                if isinstance(response_result_tmp, dict):
+                    event_id = response_result_tmp.get('event_id')
+                    logger.info(f"idle time event_id => {event_id}")
+            return screenshot_path, event_id
+
+    
     # Always Option Tracking Interval
 
     def _sleep_until(self, target: datetime):
@@ -193,8 +410,8 @@ class ScreenShot:
 
         return today_start + interval * intervals_passed
     
+   
     def run_always(self):
-        
         logger.info(
             f"Anchored mode: {self.times_per_hour} screenshots/hour "
             f"(every {int(3600 / self.times_per_hour)} seconds)"
@@ -207,30 +424,38 @@ class ScreenShot:
 
         while True:
             try:
-                self._sleep_until(next_run)
+                now = datetime.now()
 
+                sleep_seconds = (next_run - now).total_seconds()
+                while sleep_seconds > 0:
+                    self._take_screenshot_30_seconds()
+                    # sleep 30s or remaining time (whichever is smaller)
+                    sleep_chunk = min(INTERVAL, sleep_seconds)
+                    logger.info(f"sleep_chunk => {sleep_chunk}")
+                    time_sleep(sleep_chunk)
+                    sleep_seconds -= sleep_chunk
+                    
                 logger.info("Taking anchored screenshot")
 
-                screenshot_path = self._take_screenshot()
-                capture_time = datetime.now(timezone.utc)
+                capture_time =  datetime.now(timezone.utc)
 
+                screenshot_path, event_id = self.get_image_path_and_event_id()
                 payload = {
-                    "file_location": screenshot_path,
-                    "is_idle_screenshot": self.is_idle_screenshot,
-                    "created_at": capture_time.isoformat(),
-                }
+                    'file_location': screenshot_path,
+                    'is_idle_screenshot': self.is_idle_screenshot,
+                    'created_at': capture_time.isoformat(),
+                    'event_id': event_id
+                }          
 
                 response = requests.post(self.server_url, json=payload)
-                response.raise_for_status()
+                response.raise_for_status() # Raise an exception for bad status codes
+                logger.info(f"Upload response always => {response.json()}")              
 
-                logger.info(f"Upload response => {response.json()}")
-
-                # Move to next slot
-                next_run += interval
-
-                # FULL re-anchor if system slept too long
-                if next_run < datetime.now() - interval:
-                    logger.warning("Detected sleep/hibernate — re-anchoring scheduler")
+                # Move to next anchored slot
+                next_run += timedelta(seconds=3600 / self.times_per_hour)
+                logger.info(f"First anchored screenshot at bbb {next_run.strftime('%H:%M:%S')}")
+                # Safety re-align (sleep / lag)
+                if next_run <= datetime.now():
                     next_run = self._next_anchored_time(datetime.now())
 
             except requests.exceptions.RequestException as req_e:
@@ -240,4 +465,3 @@ class ScreenShot:
             except Exception as e:
                 logger.exception("Anchored scheduler error")
                 time_sleep(10)
-                
