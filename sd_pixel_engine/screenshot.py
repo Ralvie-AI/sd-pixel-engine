@@ -102,26 +102,15 @@ class ScreenShot:
             logger.info(f"next run => {next_run}")
             sleep_seconds = (next_run - now).total_seconds()
             
-            if sleep_seconds > 0:
-                logger.info(f"Next screenshot at {next_run}")
-                time_sleep(sleep_seconds)
-
-            while True:
-                now = datetime.now()
-
-                if now >= next_run:
-                    break
-
-                start_time = time_perf_counter()
+            logger.info(f"sleep_seconds => {sleep_seconds}")
+            while sleep_seconds > 0:
                 self._take_screenshot_30_seconds()
-                duration = time_perf_counter() - start_time
-
-                logger.info(f"Screenshot took {duration:.4f} seconds")
-
-                # sleep only remaining time in interval
-                # sleep_time = max(0, INTERVAL - duration)
-                # logger.info(f"sleep_time INTERVAL {sleep_time} seconds")
-                time_sleep(INTERVAL)
+                # sleep 30s or remaining time (whichever is smaller)
+                sleep_chunk = min(INTERVAL, sleep_seconds)
+                logger.info(f"sleep_chunk => {sleep_chunk}")            
+                time_sleep(sleep_chunk)
+                sleep_seconds -= sleep_chunk
+                logger.info(f"sleep_seconds => {sleep_seconds}") 
 
             self._scheduled_job()   
 
@@ -188,64 +177,8 @@ class ScreenShot:
 
         except Exception as e:
             logger.error(f"MSS screenshot capture failed: {e}")
-            return None
-    
-    def _take_screenshot_30_seconds_list_index_out_of_range_error(self, screenshot_folder=None):
-
-        if screenshot_folder is None:
-            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
-
-        if not os.path.isdir(screenshot_folder):
-            os.makedirs(screenshot_folder)
-
-        active_win = gw.getActiveWindow()
-
-        if active_win is not None and active_win.title != "":
-            # 2. Get coordinates (X, Y, Width, Height)
-            x, y, w, h = active_win.left, active_win.top, active_win.width, active_win.height
-            
-            # 3. Create a unique filename based on time
-            utc_now = datetime.now(timezone.utc)
-            timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
-            output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
-           
-            # 4. Capture only the region of that window
-            # Ensure coordinates are within screen bounds to avoid errors
-            if w > 0 and h > 0:
-                screenshot = pyautogui.screenshot(region=(x, y, w, h))
-                screenshot.save(output_file)
-                logger.info(f"Captured '{active_win.title}' at {timestamp}")
-                return output_file
-        else:
-            logger.info("No active window detected. Skipping...")
-
-    def _take_screenshot_30_seconds_old(self, screenshot_folder=None):
-
-        if screenshot_folder is None:
-            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
-
-
-        if not os.path.isdir(screenshot_folder):
-            os.makedirs(screenshot_folder)
-
-        # Generate a timestamp for the filename
-        utc_now = datetime.now(timezone.utc)
-        timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
-
-        output_file = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
-
-        # The mss library handles the screenshot capture
-        # with mss() as sct:
-        #     sct.shot(output=output_file)
-        
-        with mss() as sct:
-            monitor = sct.monitors[0]  # all monitors combined
-            screenshot = sct.grab(monitor)
-            img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
-            img.save(output_file)
-
-        return output_file   
-    
+            return None    
+       
     def _scheduled_job(self):
         try:           
             now_time = datetime.now().time().replace(second=0, microsecond=0)
