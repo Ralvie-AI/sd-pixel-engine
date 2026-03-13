@@ -257,7 +257,7 @@ class ScreenShot:
 
             event_id = 0
             if screenshot_to_events:
-                max_row = max(screenshot_to_events, key=lambda x: list(x.values())[0]['duration'])
+                max_row = max(reversed(screenshot_to_events), key=lambda x: list(x.values())[0]['duration'])
                 tmp_file = list(max_row.keys())[0]
                 event_id = list(max_row.values())[0].get('id')
 
