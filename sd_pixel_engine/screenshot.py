@@ -15,7 +15,7 @@ from PIL import Image
 import requests
 import subprocess
 
-from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, capture_active_window_screenshot
+from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, capture_active_window_screenshot, get_image_name_to_utc_dt
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
 from sd_main.sd_desktop.monitor import stop_process, get_running_process_id
 
@@ -181,9 +181,10 @@ class ScreenShot:
                 return
             
             logger.info("Scheduled screenshot triggered")
-            capture_time =  datetime.now(timezone.utc)
+            # capture_time =  datetime.now(timezone.utc)
 
             screenshot_path, event_id = self.get_image_path_and_event_id()
+            capture_time = get_image_name_to_utc_dt(screenshot_path)
             payload = {
                 'file_location': screenshot_path,
                 'is_idle_screenshot': self.is_idle_screenshot,
@@ -262,7 +263,7 @@ class ScreenShot:
                 logger.info(f"fallback event_id => {last_event.get('id')}")
                 return screenshot_path, last_event.get("id")
         
-            max_row = max(screenshot_to_events, key=lambda x: list(x.values())[0]['duration'])
+            max_row = max(reversed(screenshot_to_events), key=lambda x: list(x.values())[0]['duration'])
             tmp_file = list(max_row.keys())[0]
             screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
             shutil.copy2(tmp_file, screenshot_path)
@@ -333,9 +334,10 @@ class ScreenShot:
 
                 logger.info("Taking anchored screenshot")
 
-                capture_time = datetime.now(timezone.utc)
+                # capture_time = datetime.now(timezone.utc)
 
                 screenshot_path, event_id = self.get_image_path_and_event_id()
+                capture_time = get_image_name_to_utc_dt(screenshot_path)
                 payload = {
                     "file_location": screenshot_path,
                     "is_idle_screenshot": self.is_idle_screenshot,
