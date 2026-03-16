@@ -33,7 +33,7 @@ def main():
 
     screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=args.user_id)   
     if os.path.exists(screenshot_folder):
-        # logger.info(f"deleteing screenshot_folder => {screenshot_folder}")
+        logger.info(f"deleteing screenshot_folder => {screenshot_folder}")
         shutil.rmtree(screenshot_folder)    
 
     screenshot = ScreenShot(
