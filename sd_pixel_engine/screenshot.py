@@ -102,7 +102,7 @@ class ScreenShot:
             logger.info(f"next run => {next_run}")
             sleep_seconds = (next_run - now).total_seconds()
             
-            logger.info(f"sleep_seconds => {sleep_seconds}")
+            # logger.info(f"sleep_seconds => {sleep_seconds}")
             while sleep_seconds > 0:
                 self._take_screenshot_30_seconds()
                 # sleep 30s or remaining time (whichever is smaller)
@@ -110,7 +110,7 @@ class ScreenShot:
                 # logger.info(f"sleep_chunk => {sleep_chunk}")            
                 time_sleep(sleep_chunk)
                 sleep_seconds -= sleep_chunk
-                logger.info(f"sleep_seconds => {sleep_seconds}") 
+                # logger.info(f"sleep_seconds => {sleep_seconds}") 
 
             self._scheduled_job()   
 
@@ -200,7 +200,7 @@ class ScreenShot:
 
             response = requests.post(self.server_url, json=payload)
             response.raise_for_status() # Raise an exception for bad status codes
-            logger.info(f"Upload response time_specific => {response.json()}")
+            # logger.info(f"Upload response time_specific => {response.json()}")
 
         except requests.exceptions.RequestException as req_e:
             logger.error(f"Error during API request: {req_e}")
@@ -223,7 +223,7 @@ class ScreenShot:
             'end_time': end_time,               
         }
 
-        logger.info(f"payload info => {payload}")
+        logger.info(f"screenshot time range => {payload}")
         response = requests.post(self.server_url + "get_event_time_range", json=payload)
         response.raise_for_status() # Raise an exception for bad status codes
 
@@ -253,7 +253,7 @@ class ScreenShot:
                         tmp_dict[tmp_file] = row
                         screenshot_to_events.append(tmp_dict)
 
-            logger.info(f"result => {screenshot_to_events}")
+            # logger.info(f"result => {screenshot_to_events}")
 
             event_id = 0
             if screenshot_to_events:
@@ -261,7 +261,7 @@ class ScreenShot:
                 tmp_file = list(max_row.keys())[0]
                 event_id = list(max_row.values())[0].get('id')
 
-                logger.info(f"tmp_file => {tmp_file}")
+                # logger.info(f"tmp_file => {tmp_file}")
                 logger.info(f"event_id => {event_id}")
             else:
                 # Get the maximum duration if there is no mapped between events time and 
@@ -276,7 +276,7 @@ class ScreenShot:
                 else:
                     tmp_file = filename_list_tmp[0]
 
-                logger.info(f"tmp_file => {tmp_file}")
+                # logger.info(f"tmp_file => {tmp_file}")
                 logger.info(f"event_id => {event_id}")
 
             screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
@@ -285,7 +285,7 @@ class ScreenShot:
             for tmp_file_data in filename_list:
                 os.remove(tmp_file_data)        
 
-            logger.info(f"screenshot_path => {screenshot_path}")
+            # logger.info(f"screenshot_path => {screenshot_path}")
             return screenshot_path, event_id
         
         else: 
@@ -382,11 +382,11 @@ class ScreenShot:
 
                 response = requests.post(self.server_url, json=payload)
                 response.raise_for_status() # Raise an exception for bad status codes
-                logger.info(f"Upload response always => {response.json()}")              
+                # logger.info(f"Upload response always => {response.json()}")              
 
                 # Move to next anchored slot
                 next_run += timedelta(seconds=3600 / self.times_per_hour)
-                logger.info(f"First anchored screenshot at bbb {next_run.strftime('%H:%M:%S')}")
+                logger.info(f"Second anchored screenshot at {next_run.strftime('%H:%M:%S')}")
                 # Safety re-align (sleep / lag)
                 if next_run <= datetime.now():
                     next_run = self._next_anchored_time(datetime.now())
