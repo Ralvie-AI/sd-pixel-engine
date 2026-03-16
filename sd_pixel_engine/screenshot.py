@@ -11,8 +11,8 @@ from datetime import datetime, time, timedelta, timezone
 import requests
 from mss import mss
 from PIL import Image
-import pygetwindow as gw
-import pyautogui
+# import pygetwindow as gw
+import pywinctl as pwc
 
 from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop_process_by_exe
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
@@ -107,7 +107,7 @@ class ScreenShot:
                 self._take_screenshot_30_seconds()
                 # sleep 30s or remaining time (whichever is smaller)
                 sleep_chunk = min(INTERVAL, sleep_seconds)
-                logger.info(f"sleep_chunk => {sleep_chunk}")            
+                # logger.info(f"sleep_chunk => {sleep_chunk}")            
                 time_sleep(sleep_chunk)
                 sleep_seconds -= sleep_chunk
                 logger.info(f"sleep_seconds => {sleep_seconds}") 
@@ -140,7 +140,7 @@ class ScreenShot:
 
             with mss() as sct:
 
-                active_win = gw.getActiveWindow()
+                active_win = pwc.getActiveWindow()
 
                 # -------------------------------------------------
                 # CASE 1: Capture active window region
@@ -161,7 +161,7 @@ class ScreenShot:
                         img = Image.frombytes("RGB", sct_img.size, sct_img.rgb)
                         img.save(output_file)
 
-                        logger.info(f"Captured active window '{active_win.title}'")
+                        # logger.info(f"Captured active window '{active_win.title}'")
                         return output_file
 
                 # -------------------------------------------------
@@ -227,14 +227,14 @@ class ScreenShot:
         response = requests.post(self.server_url + "get_event_time_range", json=payload)
         response.raise_for_status() # Raise an exception for bad status codes
 
-        logger.info(f"Upload response time_specific => {response.json()}")
+        # logger.info(f"Upload response time_specific => {response.json()}")
         response_result_tmp = response.json()
-        logger.info(f"response_result_tmp => {type(response_result_tmp)}")
+        # logger.info(f"response_result_tmp => {type(response_result_tmp)}")
         # logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
         response_result = json.loads(response_result_tmp["result"])
         # logger.info(f"response_result => {type(response_result)}")
-        logger.info(f"response_result => {response_result}")
-        logger.info(f"response_result type => {type(response_result)}")
+        # logger.info(f"response_result => {response_result}")
+        # logger.info(f"response_result type => {type(response_result)}")
 
 
         if not os.path.isdir(SCREENSHOT_FOLDER):
@@ -364,7 +364,7 @@ class ScreenShot:
                     self._take_screenshot_30_seconds()
                     # sleep 30s or remaining time (whichever is smaller)
                     sleep_chunk = min(INTERVAL, sleep_seconds)
-                    logger.info(f"sleep_chunk => {sleep_chunk}")
+                    # logger.info(f"sleep_chunk => {sleep_chunk}")
                     time_sleep(sleep_chunk)
                     sleep_seconds -= sleep_chunk
                     
