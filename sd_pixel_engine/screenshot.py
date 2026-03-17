@@ -169,6 +169,7 @@ class ScreenShot:
         capture_active_window_screenshot(output_file)
 
         return output_file
+    
 
     def _scheduled_job(self):
         try:           
@@ -194,7 +195,7 @@ class ScreenShot:
 
             response = requests.post(self.server_url, json=payload)
             response.raise_for_status() # Raise an exception for bad status codes
-            logger.info(f"Upload response time_specific => {response.json()}")
+            # logger.info(f"Upload response time_specific => {response.json()}")
 
         except requests.exceptions.RequestException as req_e:
             logger.error(f"Error during API request: {req_e}")
@@ -217,7 +218,7 @@ class ScreenShot:
             'end_time': end_time,               
         }
 
-        logger.info(f"payload info => {payload}")
+        logger.info(f"screenshot time range => {payload}")
         response = requests.post(self.server_url + "get_event_time_range", json=payload)
         response.raise_for_status() # Raise an exception for bad status codes
 
@@ -243,9 +244,7 @@ class ScreenShot:
                         tmp_dict = {}
                         tmp_dict[tmp_file] = row
                         screenshot_to_events.append(tmp_dict)
-
-
-            logger.info(f"result => {screenshot_to_events}")
+            # logger.info(f"result => {screenshot_to_events}")
             
             if not screenshot_to_events:
                 logger.info("No screenshot matched event range. Fallback to last event.")
@@ -271,7 +270,7 @@ class ScreenShot:
             for tmp_file_data in filename_list:
                 os.remove(tmp_file_data)  
 
-            logger.info(f"screenshot_path => {screenshot_path}")
+            # logger.info(f"screenshot_path => {screenshot_path}")
             logger.info(f"event_id => {list(max_row.values())[0].get('id')}")
             return screenshot_path, list(max_row.values())[0].get('id') 
 
@@ -346,11 +345,11 @@ class ScreenShot:
                 }
                 response = requests.post(self.server_url, json=payload)
                 response.raise_for_status() # Raise an exception for bad status codes
-                logger.info(f"Upload response always => {response.json()}")
+                # logger.info(f"Upload response always => {response.json()}")
 
                 # Move to next anchored slot
                 next_run += timedelta(seconds=3600 / self.times_per_hour)
-                logger.info(f"First anchored screenshot at bbb {next_run.strftime('%H:%M:%S')}")
+                logger.info(f"Second anchored screenshot at {next_run.strftime('%H:%M:%S')}")
                 # Safety re-align (sleep / lag)
                 if next_run <= datetime.now():
                     next_run = self._next_anchored_time(datetime.now())
@@ -362,3 +361,5 @@ class ScreenShot:
             except Exception as e:
                 logger.error(f"Anchored scheduler error: {e}")
                 time_sleep(10)
+
+    
