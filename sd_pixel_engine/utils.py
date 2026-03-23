@@ -89,7 +89,7 @@ def get_main_screen_bounds():
         "width": int(screen.size.width),
         "height": int(screen.size.height),
     }
-    logger.info(f"[SCREEN] Main screen bounds: {bounds}")
+    # logger.info(f"[SCREEN] Main screen bounds: {bounds}")
     return bounds
 
 
@@ -98,7 +98,7 @@ def clamp_region(region, screen):
     Clamp window bounds to screen bounds.
     Return None if the window does not overlap the screen at all.
     """
-    logger.info(f"[CLAMP] Before clamp: {region}")
+    # logger.info(f"[CLAMP] Before clamp: {region}")
 
     left = max(region["left"], screen["left"])
     top = max(region["top"], screen["top"])
@@ -126,7 +126,7 @@ def clamp_region(region, screen):
         "height": int(height),
     }
 
-    logger.info(f"[CLAMP] After clamp: {clamped}")
+    # logger.info(f"[CLAMP] After clamp: {clamped}")
     return clamped
 
 
@@ -171,9 +171,9 @@ def is_bad_mss_capture(img, win, screen):
     """
     Detect broken MSS captures on macOS fullscreen apps
     """
-    logger.info(f"[MSS] Grab size: {img.width}x{img.height}")
-    logger.info(f"[MSS] Screen size: {screen['width']}x{screen['height']}")
-    logger.info(f"[MSS] Window size: {win['width']}x{win['height']}")
+    # logger.info(f"[MSS] Grab size: {img.width}x{img.height}")
+    # logger.info(f"[MSS] Screen size: {screen['width']}x{screen['height']}")
+    # logger.info(f"[MSS] Window size: {win['width']}x{win['height']}")
 
     if img.height < screen["height"] * 0.25:
         logger.warning("[MSS] Height < 25% of screen → BAD capture")
