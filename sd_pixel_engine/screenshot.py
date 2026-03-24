@@ -18,6 +18,7 @@ from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
 
 from sd_pixel_engine.utils import stop_process_by_exe
+from sd_pixel_engine.capture_window import capture_active_window
 
 
 os.environ.pop('HTTP_PROXY', None)
@@ -124,6 +125,26 @@ class ScreenShot:
     # 2026-01-13 06:58:16.823000+00:00 UTC Time
     # 2026-01-13T06-58-16.823000Z.png
     def _take_screenshot_30_seconds(self, screenshot_folder=None):
+        
+        if screenshot_folder is None:
+            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
+
+        os.makedirs(screenshot_folder, exist_ok=True)
+
+        try:
+            utc_now = datetime.now(timezone.utc)
+            timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
+            output_file = os.path.join(
+                screenshot_folder,
+                f"{self.user_id}_{timestamp}.png"
+            )           
+
+            capture_active_window(output_file)           
+
+        except Exception as e:
+            logger.error(f"MSS screenshot capture failed: {e}")
+
+    def _take_screenshot_30_seconds_old(self, screenshot_folder=None):
         
         if screenshot_folder is None:
             screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
