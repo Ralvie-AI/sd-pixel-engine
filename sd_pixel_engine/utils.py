@@ -161,7 +161,7 @@ def get_active_window_bounds():
             "owner": owner,
         }
 
-        logger.info(f"[WINDOW] Active window detected: {result}")
+        # logger.info(f"[WINDOW] Active window detected: {result}")
         return result
 
     logger.warning("[WINDOW] No valid active window found")
@@ -176,7 +176,7 @@ def is_bad_mss_capture(img, win, screen):
     # logger.info(f"[MSS] Window size: {win['width']}x{win['height']}")
 
     if img.height < screen["height"] * 0.25:
-        logger.warning("[MSS] Height < 25% of screen → BAD capture")
+        # logger.warning("[MSS] Height < 25% of screen → BAD capture")
         return True
 
     if (
@@ -252,6 +252,10 @@ def capture_active_window_screenshot(output_file: str):
         )
         Quartz.CGImageDestinationAddImage(dest, image, None)
         Quartz.CGImageDestinationFinalize(dest)
+
+
+
+
 
 
 if __name__ == '__main__':
