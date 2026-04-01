@@ -6,6 +6,8 @@ from ctypes import windll, byref, Structure, c_long
 from PIL import Image
 from datetime import datetime
 
+from mss import mss
+
 
 class RECT(Structure):
     _fields_ = [
@@ -72,6 +74,12 @@ def capture_active_window(filename):
     img.save(filename)
     # return filename
     
+def capture_full_screen(filename):
+     with mss() as sct:
+        monitor = sct.monitors[0]  # all monitors combined
+        screenshot = sct.grab(monitor)
+        img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+        img.save(filename)
 
 if __name__ == "__main__":
     capture_active_window()

@@ -2,6 +2,7 @@ import logging
 import os
 import json
 import shutil
+import threading
 from pathlib import Path
 from glob import glob
 from time import sleep as time_sleep, perf_counter as time_perf_counter
@@ -18,7 +19,7 @@ from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
 
 from sd_pixel_engine.utils import stop_process_by_exe
-from sd_pixel_engine.capture_window import capture_active_window
+from sd_pixel_engine.capture_window import capture_active_window, capture_full_screen
 
 
 os.environ.pop('HTTP_PROXY', None)
@@ -137,69 +138,21 @@ class ScreenShot:
             output_file = os.path.join(
                 screenshot_folder,
                 f"{self.user_id}_{timestamp}.png"
-            )           
+            )
 
-            capture_active_window(output_file)           
-
-        except Exception as e:
-            logger.error(f"MSS screenshot capture failed: {e}")
-
-    def _take_screenshot_30_seconds_old(self, screenshot_folder=None):
-        
-        if screenshot_folder is None:
-            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
-
-        os.makedirs(screenshot_folder, exist_ok=True)
-
-        try:
-            utc_now = datetime.now(timezone.utc)
-            timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
-            output_file = os.path.join(
+            output_file_ocr = os.path.join(
                 screenshot_folder,
-                f"{self.user_id}_{timestamp}.png"
+                f"{self.user_id}_{timestamp}_ocr.png"
             )           
 
-            with mss() as sct:
-
-                active_win = pwc.getActiveWindow()
-
-                # -------------------------------------------------
-                # CASE 1: Capture active window region
-                # -------------------------------------------------
-                if active_win and active_win.title:
-                    x, y = active_win.left, active_win.top
-                    w, h = active_win.width, active_win.height
-
-                    if w > 0 and h > 0:
-                        monitor = {
-                            "left": x,
-                            "top": y,
-                            "width": w,
-                            "height": h
-                        }
-
-                        sct_img = sct.grab(monitor)
-                        img = Image.frombytes("RGB", sct_img.size, sct_img.rgb)
-                        img.save(output_file)
-
-                        # logger.info(f"Captured active window '{active_win.title}'")
-                        return output_file
-
-                # -------------------------------------------------
-                # CASE 2: Full multi-monitor capture (fallback)
-                # -------------------------------------------------
-                # monitor[0] = virtual screen (ALL monitors)
-                sct_img = sct.grab(sct.monitors[0])
-                img = Image.frombytes("RGB", sct_img.size, sct_img.rgb)
-                img.save(output_file)
-
-                logger.info("Captured full virtual screen (fallback)")
-                return output_file
+            # capture_active_window(output_file)
+            threading.Thread(target=capture_active_window, args=(output_file_ocr,)).start()
+            threading.Thread(target=capture_full_screen, args=(output_file,)).start()
 
         except Exception as e:
             logger.error(f"MSS screenshot capture failed: {e}")
-            return None    
-       
+
+           
     def _scheduled_job(self):
         try:           
             now_time = datetime.now().time().replace(second=0, microsecond=0)
@@ -228,10 +181,14 @@ class ScreenShot:
         except Exception as e:
             logger.error(f"Error in scheduled job: {e}")
 
+
     def get_image_path_and_event_id(self):
         screenshot_folder_user = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
         filename_list = glob(os.path.join(screenshot_folder_user, "*.png"))
-        filename_list_tmp = sorted(filename_list, reverse=False)
+
+        filtered_files = [f for f in filename_list if not f.endswith("_ocr.png")]
+
+        filename_list_tmp = sorted(filtered_files, reverse=False)
         if len(filename_list_tmp) == 1: 
             start_time = get_image_name_to_utc(filename_list_tmp[0])
             end_time = get_image_name_to_utc(filename_list_tmp[0])
@@ -300,8 +257,19 @@ class ScreenShot:
                 # logger.info(f"tmp_file => {tmp_file}")
                 logger.info(f"event_id => {event_id}")
 
-            screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
-            shutil.copy2(tmp_file, screenshot_path)
+            # full_screen_img = Path(tmp_file).name
+            # tmp_ocr, ocr_ext = os.path.splitext(full_screen_img)
+            # ocr_img = tmp_ocr + "_ocr.png"
+            # screenshot_path = os.path.join(SCREENSHOT_FOLDER, full_screen_img)
+            # screenshot_ocr_path = os.path.join(SCREENSHOT_FOLDER, ocr_img)
+
+            # tmp_ocr_file, ocr_tmp_ext = os.path.splitext(tmp_file)
+            # ocr_tmp_file = os.path.join(tmp_ocr_file, ocr_img)
+            # shutil.copy2(tmp_file, screenshot_path)
+            # shutil.copy2(ocr_tmp_file, screenshot_ocr_path)
+
+            screenshot_path = self.move_image_file(tmp_file)
+         
 
             for tmp_file_data in filename_list:
                 os.remove(tmp_file_data)        
@@ -317,8 +285,10 @@ class ScreenShot:
             # event_id will be used from the latest event row.
             
             tmp_file = filename_list_tmp[-1]
-            screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
-            shutil.copy2(tmp_file, screenshot_path)
+            # screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
+            # shutil.copy2(tmp_file, screenshot_path)
+
+            screenshot_path = self.move_image_file(tmp_file)
 
             for tmp_file_data in filename_list:
                 os.remove(tmp_file_data) 
@@ -335,6 +305,25 @@ class ScreenShot:
             return screenshot_path, event_id
 
     
+    def move_image_file(self, tmp_file):
+        # logger.info(f"tmp_file => {tmp_file}")
+        full_screen_img = Path(tmp_file).name
+        tmp_ocr, ocr_ext = os.path.splitext(full_screen_img)
+        ocr_img = tmp_ocr + "_ocr.png"
+        screenshot_path = os.path.join(SCREENSHOT_FOLDER, full_screen_img)
+        screenshot_ocr_path = os.path.join(SCREENSHOT_FOLDER, ocr_img)
+
+        # logger.info(f"screenshot_ocr_path => {screenshot_ocr_path}")
+        # logger.info(f"screenshot_path => {screenshot_path}")
+        tmp_ocr_full_path, ocr_tmp_ext = os.path.splitext(tmp_file)
+        ocr_tmp_file = tmp_ocr_full_path + "_ocr.png"
+
+        shutil.copy2(tmp_file, screenshot_path)
+        shutil.copy2(ocr_tmp_file, screenshot_ocr_path)
+
+        return screenshot_path
+
+
     # Always Option Tracking Interval
 
     def _sleep_until(self, target: datetime):
