@@ -1,7 +1,12 @@
+import os 
+
 import mss
 import ctypes
 from ctypes import wintypes
 from PIL import Image, ImageDraw
+import cv2
+import numpy as np
+
 
 # Constants for DWM to get the real window size (minus shadows)
 DWMWA_EXTENDED_FRAME_BOUNDS = 9
@@ -61,8 +66,55 @@ def capture_screenshots(filename, ocr_filename):
             )
         
         canvas.save(filename)
-        # print(f"✓ Saved context: {filename}")
-        # print(f"✓ Saved OCR crop: {ocr_filename}")
 
-# Usage
-# capture_screenshots("full_desktop.png", "ocr_target.png")
+
+def crop_black_background(image_path, output_path=None, threshold=10):
+    """
+    Detects and crops black background from an image.
+    
+    Args:
+        image_path: Path to input image
+        output_path: Path to save cropped image (optional)
+        threshold: Pixel value threshold to consider as "black" (0-255)
+    
+    Returns:
+        Cropped PIL Image
+    """
+    # Load image
+    img = cv2.imread(image_path)
+    
+    # --- Step 1: Check if black background exists ---
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    black_pixels = np.sum(gray <= threshold)
+    total_pixels = gray.size
+    black_ratio = black_pixels / total_pixels
+    
+    print(f"Black pixel ratio: {black_ratio:.2%}")
+    
+    if black_ratio > 0.05:  # More than 5% black pixels
+        print("✅ Black background detected!")
+    else:
+        print("❌ No significant black background found.")
+        return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+
+    # --- Step 2: Create a mask of non-black pixels ---
+    mask = gray > threshold  # True where pixels are NOT black
+
+    # --- Step 3: Find bounding box of non-black content ---
+    coords = np.argwhere(mask)          # All non-black pixel coordinates
+    y_min, x_min = coords.min(axis=0)  # Top-left corner
+    y_max, x_max = coords.max(axis=0)  # Bottom-right corner
+    
+    # print(f"Content bounding box: ({x_min}, {y_min}) → ({x_max}, {y_max})")
+
+    # --- Step 4: Crop the image ---
+    cropped = img[y_min:y_max+1, x_min:x_max+1]
+    
+    # Convert BGR (OpenCV) → RGB (PIL)
+    cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+    result = Image.fromarray(cropped_rgb)
+
+    # --- Step 5: Save if output path provided ---
+    if output_path:
+        os.remove(image_path)
+        result.save(output_path)

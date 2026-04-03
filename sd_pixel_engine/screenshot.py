@@ -19,7 +19,7 @@ from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
 
 from sd_pixel_engine.utils import stop_process_by_exe
-from sd_pixel_engine.capture_window import capture_screenshots
+from sd_pixel_engine.capture_window import capture_screenshots, crop_black_background
 
 
 os.environ.pop('HTTP_PROXY', None)
@@ -320,6 +320,8 @@ class ScreenShot:
 
         shutil.copy2(tmp_file, screenshot_path)
         shutil.copy2(ocr_tmp_file, screenshot_ocr_path)
+
+        crop_black_background(screenshot_path, screenshot_path)
 
         return screenshot_path
 
