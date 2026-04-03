@@ -19,7 +19,7 @@ from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
 
 from sd_pixel_engine.utils import stop_process_by_exe
-from sd_pixel_engine.capture_window import capture_active_window, capture_full_screen
+from sd_pixel_engine.capture_window import capture_screenshots
 
 
 os.environ.pop('HTTP_PROXY', None)
@@ -146,8 +146,8 @@ class ScreenShot:
             )           
 
             # capture_active_window(output_file)
-            threading.Thread(target=capture_active_window, args=(output_file_ocr,)).start()
-            threading.Thread(target=capture_full_screen, args=(output_file,)).start()
+            # threading.Thread(target=capture_screenshots, args=(output_file, output_file_ocr,)).start()
+            capture_screenshots(output_file, output_file_ocr)
 
         except Exception as e:
             logger.error(f"MSS screenshot capture failed: {e}")
