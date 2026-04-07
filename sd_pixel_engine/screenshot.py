@@ -6,6 +6,7 @@ import platform
 import signal
 import json
 import shutil
+from mss import mss
 
 from pathlib import Path
 from datetime import datetime, time, timedelta, timezone
@@ -15,7 +16,7 @@ from PIL import Image
 import requests
 import subprocess
 
-from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, capture_active_window_screenshot, get_image_name_to_utc_dt
+from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, capture_active_window_screenshot, get_image_name_to_utc_dt,capture_fullscreen
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
 from sd_main.sd_desktop.monitor import stop_process, get_running_process_id
 
@@ -94,7 +95,7 @@ class ScreenShot:
             slots.append(current.strftime("%H:%M:%S"))
             current += interval
 
-        logger.info(f"Times => {slots}")
+        # logger.info(f"Times => {slots}")
     
     def run(self):
         logger.info("Screenshot scheduler started (cross-midnight safe)")
@@ -132,7 +133,7 @@ class ScreenShot:
                 self._take_screenshot_30_seconds()
                 duration = time_perf_counter() - start_time
 
-                logger.info(f"Screenshot took {duration:.4f} seconds")
+                # logger.info(f"Screenshot took {duration:.4f} seconds")
 
                 # sleep only remaining time in interval
                 # sleep_time = max(0, INTERVAL - duration)
@@ -151,7 +152,7 @@ class ScreenShot:
 
     # 2026-01-13 06:58:16.823000+00:00 UTC Time
     # 2026-01-13T06-58-16.823000Z.png
-    def _take_screenshot_30_seconds(self, screenshot_folder=None):
+    def _take_screenshot_30_seconds_old(self, screenshot_folder=None):
 
         if screenshot_folder is None:
             screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
@@ -167,12 +168,25 @@ class ScreenShot:
         
         # Active window screenshot (3 conditions handled)
         capture_active_window_screenshot(output_file)
-
-        return output_file
     
+    def _take_screenshot_30_seconds(self, screenshot_folder=None):
+        if screenshot_folder is None:
+            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
+        os.makedirs(screenshot_folder, exist_ok=True)
+
+        utc_now = datetime.now(timezone.utc)
+        timestamp = utc_now.strftime("%Y-%m-%dT%H-%M-%S.%fZ")
+
+        full_path = f"{screenshot_folder}/{self.user_id}_{timestamp}.png"
+        active_path = f"{screenshot_folder}/{self.user_id}_{timestamp}_active.png"
+
+        capture_fullscreen(full_path)
+        capture_active_window_screenshot(active_path)
+
+        return full_path, active_path
 
     def _scheduled_job(self):
-        try:           
+        try:        
             now_time = datetime.now().time().replace(second=0, microsecond=0)
             logger.info(f"now_time {now_time}")
             if not self._is_within_time_window(now_time):               
@@ -185,6 +199,7 @@ class ScreenShot:
             # capture_time =  datetime.now(timezone.utc)
 
             screenshot_path, event_id = self.get_image_path_and_event_id()
+            # logger.error(f"[DEBUG BEFORE PARSE] screenshot_path => {screenshot_path}")
             capture_time = get_image_name_to_utc_dt(screenshot_path)
             payload = {
                 'file_location': screenshot_path,
@@ -204,8 +219,15 @@ class ScreenShot:
     
     def get_image_path_and_event_id(self):
         screenshot_folder_user = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
-        filename_list = glob(os.path.join(screenshot_folder_user, "*.png"))
-        filename_list_tmp = sorted(filename_list, reverse=False)
+        filename_list = [
+            f for f in glob(os.path.join(screenshot_folder_user, "*.png"))
+            if not f.endswith("_active.png")
+        ]
+        filename_list_tmp = sorted(
+            [f for f in filename_list if "_active" not in os.path.basename(f)],
+            reverse=False
+        )
+        # logger.error(f"[DEBUG FILE LIST] => {filename_list_tmp}")
         if len(filename_list_tmp) == 1: 
             start_time = get_image_name_to_utc(filename_list_tmp[0])
             end_time = get_image_name_to_utc(filename_list_tmp[0])
@@ -222,12 +244,12 @@ class ScreenShot:
         response = requests.post(self.server_url + "get_event_time_range", json=payload)
         response.raise_for_status() # Raise an exception for bad status codes
 
-        logger.info(f"Upload response time_specific => {response.json()}")
+        # logger.info(f"Upload response time_specific => {response.json()}")
         response_result_tmp = response.json()
         # logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
         response_result = json.loads(response_result_tmp["result"])
         # logger.info(f"response_result => {type(response_result)}")
-        logger.info(f"response_result => {response_result}")
+        # logger.info(f"response_result => {response_result}")
 
         if not os.path.isdir(SCREENSHOT_FOLDER):
             os.makedirs(SCREENSHOT_FOLDER)
@@ -255,11 +277,26 @@ class ScreenShot:
                 screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
                 shutil.copy2(tmp_file, screenshot_path)
 
-                for tmp_file_data in filename_list:
+                # copy active
+                active_src = tmp_file.replace(".png", "_active.png")
+                active_dst = screenshot_path.replace(".png", "_active.png")
+
+                if os.path.exists(active_src):
+                    shutil.copy2(active_src, active_dst)
+                else:
+                    logger.error(f"[ACTIVE MISSING BEFORE COPY] {active_src}")
+
+                # delete หลัง copy เสร็จ
+                for tmp_file_data in filename_list_tmp:
                     os.remove(tmp_file_data)
 
-                logger.info(f"fallback screenshot_path => {screenshot_path}")
-                logger.info(f"fallback event_id => {last_event.get('id')}")
+                    active_file = tmp_file_data.replace(".png", "_active.png")
+                    if os.path.exists(active_file):
+                        os.remove(active_file)
+
+                # logger.info(f"fallback screenshot_path => {screenshot_path}")
+                # logger.info(f"fallback event_id => {last_event.get('id')}")
+                # logger.error(f"[DEBUG RETURN] screenshot_path => {screenshot_path}")
                 return screenshot_path, last_event.get("id")
         
             max_row = max(reversed(screenshot_to_events), key=lambda x: list(x.values())[0]['duration'])
@@ -267,11 +304,26 @@ class ScreenShot:
             screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
             shutil.copy2(tmp_file, screenshot_path)
 
-            for tmp_file_data in filename_list:
-                os.remove(tmp_file_data)  
+           # copy active
+            active_src = tmp_file.replace(".png", "_active.png")
+            active_dst = screenshot_path.replace(".png", "_active.png")
+
+            if os.path.exists(active_src):
+                shutil.copy2(active_src, active_dst)
+            else:
+                logger.error(f"[ACTIVE MISSING BEFORE COPY] {active_src}")
+
+            # delete หลัง copy เสร็จ
+            for tmp_file_data in filename_list_tmp:
+                os.remove(tmp_file_data)
+
+                active_file = tmp_file_data.replace(".png", "_active.png")
+                if os.path.exists(active_file):
+                    os.remove(active_file)
 
             # logger.info(f"screenshot_path => {screenshot_path}")
             logger.info(f"event_id => {list(max_row.values())[0].get('id')}")
+            # logger.error(f"[DEBUG RETURN] screenshot_path => {screenshot_path}")
             return screenshot_path, list(max_row.values())[0].get('id') 
 
         else: 
@@ -285,10 +337,17 @@ class ScreenShot:
             screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
             shutil.copy2(tmp_file, screenshot_path)
 
-            for tmp_file_data in filename_list:
-                os.remove(tmp_file_data) 
+            for tmp_file_data in filename_list_tmp:
+                # ลบ full
+                os.remove(tmp_file_data)
+
+                # ลบ active คู่กัน
+                active_file = tmp_file_data.replace(".png", "_active.png")
+                if os.path.exists(active_file):
+                    os.remove(active_file)
             logger.info(f"idle time screenshot_path => {screenshot_path}")
             logger.info(f"idle time event_id => {response_result_tmp.get('event_id')}")
+            # logger.error(f"[DEBUG RETURN] screenshot_path => {screenshot_path}")
             return screenshot_path, response_result_tmp.get('event_id')     
 
     # Always Option Tracking Interval
@@ -336,6 +395,7 @@ class ScreenShot:
                 # capture_time = datetime.now(timezone.utc)
 
                 screenshot_path, event_id = self.get_image_path_and_event_id()
+                logger.error(f"screenshot_path DEBUG => {screenshot_path}")
                 capture_time = get_image_name_to_utc_dt(screenshot_path)
                 payload = {
                     "file_location": screenshot_path,
@@ -362,4 +422,34 @@ class ScreenShot:
                 logger.error(f"Anchored scheduler error: {e}")
                 time_sleep(10)
 
-    
+    def cleanup_old_screenshots(self):
+            screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
+
+            if not os.path.isdir(screenshot_folder):
+                return
+
+            now = datetime.now(timezone.utc)
+
+            today_start = datetime.combine(
+                now.date(),
+                self.start_time,
+                tzinfo=timezone.utc
+            )
+
+            elapsed = (now - today_start).total_seconds()
+            slots_passed = int(elapsed // self.interval)
+
+            slot_start = today_start + timedelta(seconds=slots_passed * self.interval)
+            logger.info(f"slot_start {slot_start}")
+
+            files = [
+                f for f in glob(os.path.join(screenshot_folder, "*.png"))
+                if not f.endswith("_active.png")
+]
+
+            for f in files:
+                shot_time = get_image_name_to_utc_dt(f)
+
+                if shot_time < slot_start:
+                    os.remove(f)
+                    # logger.info(f"delete old screenshot {f}") 
