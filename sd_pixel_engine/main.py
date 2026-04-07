@@ -33,7 +33,7 @@ def main():
 
     screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=args.user_id)   
     if os.path.exists(screenshot_folder):
-        logger.info(f"deleteing screenshot_folder => {screenshot_folder}")
+        # logger.info(f"deleteing screenshot_folder => {screenshot_folder}")
         shutil.rmtree(screenshot_folder)    
 
     screenshot = ScreenShot(
@@ -43,8 +43,10 @@ def main():
         end_time=args.end_hour,
         times_per_hour=args.times_per_hour,
         days=args.days,
-        is_idle_screenshot=args.is_idle_screenshot        
+        is_idle_screenshot=args.is_idle_screenshot,
     )
+
+    # screenshot.cleanup_old_screenshots()
 
     if args.tracking_interval == 0:
         screenshot.run_always()
