@@ -303,7 +303,40 @@ class ScreenShot:
                     event_id = response_result_tmp.get('event_id')
                     logger.info(f"idle time event_id => {event_id}")
             return screenshot_path, event_id
+        
+    def get_readable_file_size(self, file_path):
+        size_bytes = os.path.getsize(file_path)
+        
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size_bytes < 1024:
+                return f"{size_bytes:.2f} {unit}"
+            size_bytes /= 1024
 
+    def aggressive_compress_png(self, input_path, output_path):                   
+            
+        with Image.open(input_path) as img:
+            # 1. Convert to RGB if necessary
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+                
+            # 2. Resize the image (PNGs at 4K or 1080p are rarely under 500kb)
+            # We will scale it down to a max width of 1280px to save space
+            width, height = img.size
+            if width > 1280:
+                ratio = 1280 / width
+                new_size = (1280, int(height * ratio))
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
+                print(f"Resized to {new_size[0]}x{new_size[1]}")
+
+            # 3. Apply Quantization (The most important step for PNG size)
+            # We reduce the image to a 256-color palette
+            print("Applying color quantization...")
+            img = img.convert("P", palette=Image.ADAPTIVE, colors=256)
+
+            os.remove(input_path)
+            
+            # 4. Save with optimization
+            img.save(output_path, "PNG", optimize=True)
     
     def move_image_file(self, tmp_file):
         # logger.info(f"tmp_file => {tmp_file}")
@@ -322,6 +355,11 @@ class ScreenShot:
         shutil.copy2(ocr_tmp_file, screenshot_ocr_path)
 
         crop_black_background(screenshot_path, screenshot_path)
+
+        if os.path.getsize(screenshot_path) > 1024 * 1024:
+            file_size = self.get_readable_file_size(screenshot_path)
+            logger.info(f"File size => {file_size}")
+            self.aggressive_compress_png(screenshot_path, screenshot_path)
 
         return screenshot_path
 
