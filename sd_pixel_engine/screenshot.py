@@ -4,7 +4,7 @@ import json
 import shutil
 from pathlib import Path
 from glob import glob
-from time import sleep as time_sleep, perf_counter as time_perf_counter
+from time import sleep as time_sleep
 from datetime import datetime, time, timedelta, timezone
 
 import requests
@@ -94,16 +94,13 @@ class ScreenShot:
             next_run = self._next_run_datetime(now)
             logger.info(f"next run => {next_run}")
             sleep_seconds = (next_run - now).total_seconds()
-            
-            # logger.info(f"sleep_seconds => {sleep_seconds}")
+
             while sleep_seconds > 0:
                 self._take_screenshot_30_seconds()
                 # sleep 30s or remaining time (whichever is smaller)
-                sleep_chunk = min(INTERVAL, sleep_seconds)
-                # logger.info(f"sleep_chunk => {sleep_chunk}")            
+                sleep_chunk = min(INTERVAL, sleep_seconds)                
                 time_sleep(sleep_chunk)
-                sleep_seconds -= sleep_chunk
-                # logger.info(f"sleep_seconds => {sleep_seconds}") 
+                sleep_seconds -= sleep_chunk                
 
             self._scheduled_job()   
 
@@ -162,7 +159,6 @@ class ScreenShot:
 
             response = requests.post(self.server_url, json=payload)
             response.raise_for_status() # Raise an exception for bad status codes
-            # logger.info(f"Upload response time_specific => {response.json()}")
 
         except requests.exceptions.RequestException as req_e:
             logger.error(f"Error during API request: {req_e}")
@@ -192,17 +188,10 @@ class ScreenShot:
         logger.info(f"screenshot time range => {payload}")
         response = requests.post(self.server_url + "get_event_time_range", json=payload)
         response.raise_for_status() # Raise an exception for bad status codes
-
-        # logger.info(f"Upload response time_specific => {response.json()}")
-        response_result_tmp = response.json()
-        # logger.info(f"response_result_tmp => {type(response_result_tmp)}")
-        # logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
+        
+        response_result_tmp = response.json()      
         response_result = json.loads(response_result_tmp["result"])
-        # logger.info(f"response_result => {type(response_result)}")
-        # logger.info(f"response_result => {response_result}")
-        # logger.info(f"response_result type => {type(response_result)}")
-
-
+      
         if not os.path.isdir(SCREENSHOT_FOLDER):
             os.makedirs(SCREENSHOT_FOLDER)
 
@@ -210,7 +199,6 @@ class ScreenShot:
         if response_result and len(response_result) > 1:
             for tmp_file in filename_list_tmp:
                 file_utc_time = get_image_name_to_utc(tmp_file)
-                # logger.info(f"file_utc_time => {file_utc_time}")
                 
                 for row in response_result:
                     start_time, end_time = add_second_to_utc(row.get('timestamp'), row.get('duration'))
@@ -218,8 +206,6 @@ class ScreenShot:
                         tmp_dict = {}
                         tmp_dict[tmp_file] = row
                         screenshot_to_events.append(tmp_dict)
-
-            # logger.info(f"result => {screenshot_to_events}")
 
             event_id = 0
             if screenshot_to_events:
@@ -241,28 +227,14 @@ class ScreenShot:
                     tmp_file = filename_list_tmp[-1]
                 else:
                     tmp_file = filename_list_tmp[0]
+                
+                logger.info(f"event_id => {event_id}")            
 
-                # logger.info(f"tmp_file => {tmp_file}")
-                logger.info(f"event_id => {event_id}")
-
-            # full_screen_img = Path(tmp_file).name
-            # tmp_ocr, ocr_ext = os.path.splitext(full_screen_img)
-            # ocr_img = tmp_ocr + "_ocr.png"
-            # screenshot_path = os.path.join(SCREENSHOT_FOLDER, full_screen_img)
-            # screenshot_ocr_path = os.path.join(SCREENSHOT_FOLDER, ocr_img)
-
-            # tmp_ocr_file, ocr_tmp_ext = os.path.splitext(tmp_file)
-            # ocr_tmp_file = os.path.join(tmp_ocr_file, ocr_img)
-            # shutil.copy2(tmp_file, screenshot_path)
-            # shutil.copy2(ocr_tmp_file, screenshot_ocr_path)
-
-            screenshot_path = self.move_image_file(tmp_file)
-         
+            screenshot_path = self.move_image_file(tmp_file)         
 
             for tmp_file_data in filename_list:
-                os.remove(tmp_file_data)        
+                os.remove(tmp_file_data)
 
-            # logger.info(f"screenshot_path => {screenshot_path}")
             return screenshot_path, event_id
         
         else: 
@@ -272,18 +244,14 @@ class ScreenShot:
             # so screenshot_path will be used the lastest screenshot and
             # event_id will be used from the latest event row.
             
-            tmp_file = filename_list_tmp[-1]
-            # screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
-            # shutil.copy2(tmp_file, screenshot_path)
+            tmp_file = filename_list_tmp[-1]            
 
             screenshot_path = self.move_image_file(tmp_file)
 
             for tmp_file_data in filename_list:
-                os.remove(tmp_file_data) 
-            
-            # logger.info(f"idle time screenshot_path => {screenshot_path}")
+                os.remove(tmp_file_data)             
+
             if response_result:
-                # logger.info(f"idle time response_result => {response_result}")
                 event_id = response_result[0].get('id')
                 logger.info(f"idle time event_id => {event_id}")
             else:
@@ -333,9 +301,7 @@ class ScreenShot:
         ocr_img = tmp_ocr + "_ocr.png"
         screenshot_path = os.path.join(SCREENSHOT_FOLDER, full_screen_img)
         screenshot_ocr_path = os.path.join(SCREENSHOT_FOLDER, ocr_img)
-
-        # logger.info(f"screenshot_ocr_path => {screenshot_ocr_path}")
-        # logger.info(f"screenshot_path => {screenshot_path}")
+        
         tmp_ocr_full_path, ocr_tmp_ext = os.path.splitext(tmp_file)
         ocr_tmp_file = tmp_ocr_full_path + "_ocr.png"
 
@@ -388,7 +354,6 @@ class ScreenShot:
             f"(every {int(3600 / self.times_per_hour)} seconds)"
         )
 
-        interval = timedelta(seconds=3600 / self.times_per_hour)
         next_run = self._next_anchored_time(datetime.now())
 
         logger.info(f"First anchored screenshot at {next_run.strftime('%H:%M:%S')}")
@@ -402,7 +367,6 @@ class ScreenShot:
                     self._take_screenshot_30_seconds()
                     # sleep 30s or remaining time (whichever is smaller)
                     sleep_chunk = min(INTERVAL, sleep_seconds)
-                    # logger.info(f"sleep_chunk => {sleep_chunk}")
                     time_sleep(sleep_chunk)
                     sleep_seconds -= sleep_chunk
                     
