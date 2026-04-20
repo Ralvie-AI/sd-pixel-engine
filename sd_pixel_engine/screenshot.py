@@ -2,31 +2,22 @@ import logging
 import os
 import json
 import shutil
-import threading
 from pathlib import Path
 from glob import glob
 from time import sleep as time_sleep, perf_counter as time_perf_counter
 from datetime import datetime, time, timedelta, timezone
 
-
 import requests
-from mss import mss
 from PIL import Image
-# import pygetwindow as gw
-import pywinctl as pwc
 
 from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop_process_by_exe
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
-
-from sd_pixel_engine.utils import stop_process_by_exe
 from sd_pixel_engine.capture_window import capture_screenshots, crop_black_background
-
 
 os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
 
 logger = logging.getLogger(__name__)
-
 
 class ScreenShot:
     def __init__(self, server_url, user_id, start_time=time(0, 0), 
@@ -144,9 +135,6 @@ class ScreenShot:
                 screenshot_folder,
                 f"{self.user_id}_{timestamp}_ocr.png"
             )           
-
-            # capture_active_window(output_file)
-            # threading.Thread(target=capture_screenshots, args=(output_file, output_file_ocr,)).start()
             capture_screenshots(output_file, output_file_ocr)
 
         except Exception as e:

@@ -1,4 +1,6 @@
-import os 
+import os
+import logging
+from typing import Tuple, Optional
 
 import mss
 import ctypes
@@ -7,24 +9,43 @@ from PIL import Image, ImageDraw
 import cv2
 import numpy as np
 
+logger = logging.getLogger(__name__)
 
 # Constants for DWM to get the real window size (minus shadows)
 DWMWA_EXTENDED_FRAME_BOUNDS = 9
+DPI_AWARENESS_LEVEL = 2  # Process_Per_Monitor_DPI_Aware
+BLACK_RATIO_THRESHOLD = 0.05  # 5%
+BLACK_PIXEL_THRESHOLD = 10
+BOX_THICKNESS = 4
+BOX_COLOR = (255, 0, 0)  # Red in RGB
 
-def get_true_window_rect(hwnd):
-    rect = wintypes.RECT()
-    ctypes.windll.dwmapi.DwmGetWindowAttribute(
-        wintypes.HWND(hwnd),
-        wintypes.DWORD(DWMWA_EXTENDED_FRAME_BOUNDS),
-        ctypes.byref(rect),
-        ctypes.sizeof(rect)
-    )
-    return rect.left, rect.top, rect.right, rect.bottom
+def get_true_window_rect(hwnd: int) -> Optional[Tuple[int, int, int, int]]:
+    """
+    Get the true window bounds excluding DWM shadows (Windows only).
+    
+    Args:
+        hwnd: Window handle
+    
+    Returns:
+        Tuple of (left, top, right, bottom) or None if DWM call fails
+    """
+    try:
+        rect = wintypes.RECT()
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            wintypes.HWND(hwnd),
+            wintypes.DWORD(DWMWA_EXTENDED_FRAME_BOUNDS),
+            ctypes.byref(rect),
+            ctypes.sizeof(rect)
+        )
+        return rect.left, rect.top, rect.right, rect.bottom
+    except Exception as e:
+        logger.info(f"Failed to get window rect via DWM: {e}")
+        return None
 
 def capture_screenshots(filename, ocr_filename):
     # Ensure DPI awareness is set before any coordinate calls
     try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(2) # Process_Per_Monitor_DPI_Aware
+        ctypes.windll.shcore.SetProcessDpiAwareness(DPI_AWARENESS_LEVEL) # Process_Per_Monitor_DPI_Aware
     except Exception:
         ctypes.windll.user32.SetProcessDPIAware()
 
@@ -58,27 +79,24 @@ def capture_screenshots(filename, ocr_filename):
         active_window_crop.save(ocr_filename)
 
         # 2. Draw the red box on the full canvas for the "context" shot
-        draw = ImageDraw.Draw(canvas)
-        for t in range(4): # Thickness
-            draw.rectangle(
-                [crop_x1 - t, crop_y1 - t, crop_x2 + t, crop_y2 + t],
-                outline=(255, 0, 0)
-            )
-        
+        draw = ImageDraw.Draw(canvas)        
+        draw.rectangle(
+                [crop_x1, crop_y1, crop_x2, crop_y2],
+                outline=BOX_COLOR,
+                width=BOX_THICKNESS
+            )        
         canvas.save(filename)
 
-
-def crop_black_background(image_path, output_path=None, threshold=10):
+def crop_black_background(image_path: str, 
+                          output_path: Optional[str] = None, 
+                          threshold: int = BLACK_PIXEL_THRESHOLD):
     """
     Detects and crops black background from an image.
     
     Args:
         image_path: Path to input image
         output_path: Path to save cropped image (optional)
-        threshold: Pixel value threshold to consider as "black" (0-255)
-    
-    Returns:
-        Cropped PIL Image
+        threshold: Pixel value threshold to consider as "black" (0-255)    
     """
     # Load image
     img = cv2.imread(image_path)
@@ -88,13 +106,11 @@ def crop_black_background(image_path, output_path=None, threshold=10):
     black_pixels = np.sum(gray <= threshold)
     total_pixels = gray.size
     black_ratio = black_pixels / total_pixels
-    
-    print(f"Black pixel ratio: {black_ratio:.2%}")
-    
-    if black_ratio > 0.05:  # More than 5% black pixels
-        print("✅ Black background detected!")
+        
+    if black_ratio > BLACK_RATIO_THRESHOLD:  # More than 5% black pixels
+        logger.info("Black background detected!")
     else:
-        print("❌ No significant black background found.")
+        logger.info("No significant black background found.")
         return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
     # --- Step 2: Create a mask of non-black pixels ---
