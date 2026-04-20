@@ -12,32 +12,53 @@ from sd_pixel_engine.utils import parse_time, parse_days, str2bool
 from sd_pixel_engine.detect_sleep import create_hidden_power_listener
 
 logger = logging.getLogger(__name__)
-    
-def main():
 
+def setup_argument_parser():
+    """Create and return the argument parser."""
     parser = argparse.ArgumentParser(description="Screenshot uploader")
     parser.add_argument("--server_url", required=True, help="URL to upload screenshots")
     parser.add_argument("--user_id", required=True, help="User ID for identification")
     parser.add_argument("--start_hour", type=parse_time, default=time(8, 0),
-                    help="Start time (HH:MM)")
+                        help="Start time (HH:MM)")
     parser.add_argument("--end_hour", type=parse_time, default=time(17, 0),
-                    help="End time (HH:MM)")
-    parser.add_argument("--times_per_hour", type=int, default=7, help="Screenshots per hour")
-    parser.add_argument("--days", type=parse_days, default=[0,1,2,3,4], help="Allowed weekdays (0=Mon ... 6=Sun)")
-    parser.add_argument("--is_idle_screenshot", type=str2bool, nargs="?", const=True, default=False,
-                        help="Enable idle screenshots (true/false, default=False)")
-    parser.add_argument("--tracking_interval", type=int, default=0, help="Tracking Intervalr")
+                        help="End time (HH:MM)")
+    parser.add_argument("--times_per_hour", type=int, default=7, 
+                        help="Screenshots per hour")
+    parser.add_argument("--days", type=parse_days, default=[0,1,2,3,4], 
+                        help="Allowed weekdays (0=Mon ... 6=Sun)")
+    parser.add_argument("--is_idle_screenshot", type=str2bool, nargs="?", const=True, 
+                        default=False, help="Enable idle screenshots (true/false, default=False)")
+    parser.add_argument("--tracking_interval", type=int, default=0, 
+                        help="Tracking interval in seconds (0=always mode)")
+    return parser
 
+
+def cleanup_screenshot_folder(user_id):
+    """Clean up existing screenshot folder."""
+    screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=user_id)
+    if os.path.exists(screenshot_folder):
+        logger.info(f"Deleting screenshot folder => {screenshot_folder}")
+        shutil.rmtree(screenshot_folder)
+
+def start_sleep_detection():
+    """Start the sleep detection daemon thread."""
+    detect_sleep_thread = threading.Thread(
+        target=create_hidden_power_listener, 
+        daemon=True
+    )
+    detect_sleep_thread.start()
+
+def main():
+    parser = setup_argument_parser()
     args = parser.parse_args()
 
     # Set up logging
     setup_logging("sd-pixel-engine", log_file=True)
 
-    screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=args.user_id)   
-    if os.path.exists(screenshot_folder):
-        # logger.info(f"deleteing screenshot_folder => {screenshot_folder}")
-        shutil.rmtree(screenshot_folder)    
+    # Cleanup and initialize
+    cleanup_screenshot_folder(args.user_id)
 
+    # Create and start screenshot manager
     screenshot = ScreenShot(
         server_url=args.server_url,
         user_id=args.user_id,
@@ -45,16 +66,15 @@ def main():
         end_time=args.end_hour,
         times_per_hour=args.times_per_hour,
         days=args.days,
-        is_idle_screenshot=args.is_idle_screenshot        
+        is_idle_screenshot=args.is_idle_screenshot
     )
 
+    # Run in appropriate mode
     if args.tracking_interval == 0:
         screenshot.run_always()
     else:
         screenshot.run()
 
 if __name__ == '__main__':
-    detect_sleep_thread = threading.Thread(target=create_hidden_power_listener,daemon=True)
-    detect_sleep_thread.start()
-
+    start_sleep_detection()
     main()
