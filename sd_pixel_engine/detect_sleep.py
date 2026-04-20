@@ -1,14 +1,16 @@
 
-import win32gui
-import win32con
 import threading
 import logging
 import time
 from datetime import datetime
 
+import win32gui
+import win32con
+
 from sd_pixel_engine.utils import stop_process_by_exe
 
 # Global variable to store time just before sleep
+sleep_lock = threading.Lock()
 last_sleep_time = None          # datetime when we received PBT_APMSUSPEND
 # SLEEP_THRESHOLD = 48 * 3600     # 48 hours in seconds
 # SLEEP_THRESHOLD = 24 * 3600     # 48 hours in seconds
@@ -37,20 +39,24 @@ def is_long_sleep() -> bool:
     return slept_seconds >= SLEEP_THRESHOLD
 
 
-def on_long_sleep_detected():
-    logger.info(f"Long sleep detected!")
-    stop_process_by_exe("sd-pixel-engine.exe")    
+def on_long_sleep_detected():    
+    slept_hours = (datetime.now() - last_sleep_time).total_seconds() / 3600
+    logger.info(f"Long sleep detected! ({slept_hours:.1f} hours)")
+    try:
+        stop_process_by_exe("sd-pixel-engine.exe")
+    except Exception as e:
+        logger.error(f"Failed to stop process: {e}")
 
 
 def wnd_proc(hwnd, msg, wparam, lparam):
     global last_sleep_time
 
     if msg == win32con.WM_POWERBROADCAST:
-        ts = datetime.now().strftime("%H:%M:%S")
 
         if wparam == win32con.PBT_APMSUSPEND:
-            last_sleep_time = datetime.now()          # ← key moment
-            logger.info(f"System is going to sleep => {last_sleep_time}")
+            with sleep_lock:
+                last_sleep_time = datetime.now()          # ← key moment
+                logger.info(f"System is going to sleep => {last_sleep_time}")
             
 
         elif wparam == win32con.PBT_APMRESUMEAUTOMATIC:
