@@ -337,6 +337,15 @@ class ScreenShot:
             screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
             shutil.copy2(tmp_file, screenshot_path)
 
+            # copy active
+            active_src = tmp_file.replace(".png", "_active.png")
+            active_dst = screenshot_path.replace(".png", "_active.png")
+
+            if os.path.exists(active_src):
+                shutil.copy2(active_src, active_dst)
+            else:
+                logger.error(f"[ACTIVE MISSING BEFORE COPY] {active_src}")
+
             for tmp_file_data in filename_list_tmp:
                 # ลบ full
                 os.remove(tmp_file_data)
