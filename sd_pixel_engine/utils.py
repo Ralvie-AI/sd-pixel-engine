@@ -19,10 +19,10 @@ def get_image_name_to_utc(filename: str) -> str:
     import re
     from datetime import datetime, timezone
 
-    # เอาแค่ชื่อไฟล์ ไม่เอา path
+    # Just the filename, not the path.
     filename = os.path.basename(filename)
 
-    # ลบ _active
+    # delete _active
     filename = filename.replace("_active", "")
 
     match = re.search(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d+Z", filename)
@@ -43,7 +43,7 @@ def get_image_name_to_utc_dt(filename: str) -> datetime:
     filename = os.path.basename(filename)
     # logger.error(f"[DEBUG PARSE INPUT] filename => {filename}") 
 
-    # ตัด _active ออกเสมอ
+    # split _active 
     filename = filename.replace("_active", "")
 
     match = re.search(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d+Z", filename)
@@ -100,7 +100,7 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError("Boolean value expected (true/false).")
 
-# รายชื่อ Process ระบบที่ควรข้ามในการหา Active Window
+# exclude Process 
 EXCLUDED_OWNERS = {
     "Window Server",
     "Dock",
@@ -112,8 +112,15 @@ EXCLUDED_OWNERS = {
 
 # --- Helper Functions: Window & Screen Management ---
 
+def is_screen_locked():
+    """check lock screen macOS """
+    session_info = Quartz.CGSessionCopyCurrentDictionary()
+    if session_info:
+        return session_info.get("CGSSessionScreenIsLocked", False)
+    return False
+
 def get_active_window_bounds():
-    """ดึงพิกัดของหน้าต่างที่กำลัง Active อยู่ โดยกรองเอาเฉพาะแอปที่ผู้ใช้ใช้งานจริง"""
+    """Extract the coordinates of the currently active window, filtering to show only the apps that the user is actually using."""
     window_list = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly,
         Quartz.kCGNullWindowID
@@ -126,9 +133,6 @@ def get_active_window_bounds():
         owner = win.get("kCGWindowOwnerName", "")
         layer = win.get("kCGWindowLayer")
         bounds = win.get("kCGWindowBounds")
-
-        # Log เพื่อการตรวจสอบ (สามารถปิดได้ถ้าใช้งานจริง)
-        # logger.info(f"Checking Window: {owner} | Layer: {layer} | Bounds: {bounds}")
 
         if layer != 0:
             continue
@@ -147,7 +151,7 @@ def get_active_window_bounds():
     return None
 
 def get_screen_for_window(win):
-    """ตรวจสอบว่าหน้าต่างที่ระบุ วางอยู่บนหน้าจอ (Monitor) ไหน"""
+    """Check which monitor the specified window is located on."""
     for screen in NSScreen.screens():
         frame = screen.frame()
         s_bounds = {
@@ -165,7 +169,7 @@ def get_screen_for_window(win):
     return None
 
 def get_display_id_from_mouse():
-    """หา Display ID ของหน้าจอที่เมาส์วางอยู่ปัจจุบัน (ใช้สำหรับ Fullscreen Fallback)"""
+    """Find the Display ID of the screen where the mouse is currently hovering (used for Fullscreen Fallback)."""
     mouse_event = Quartz.CGEventCreate(None)
     mouse_loc = Quartz.CGEventGetLocation(mouse_event)
     
@@ -181,7 +185,7 @@ def get_display_id_from_mouse():
     return Quartz.CGMainDisplayID()
 
 def clamp_region(region, screen):
-    """ตัดขอบพิกัดหน้าต่างให้ไม่เกินขอบเขตของหน้าจอจริง"""
+    """Crop the window's edges so they don't exceed the actual screen boundaries."""
     left = max(region["left"], screen["left"])
     top = max(region["top"], screen["top"])
     right = min(region["left"] + region["width"], screen["left"] + screen["width"])
@@ -194,7 +198,7 @@ def clamp_region(region, screen):
     return {"left": int(left), "top": int(top), "width": int(width), "height": int(height)}
 
 def is_bad_mss_capture(img, win, screen):
-    """ตรวจสอบว่า MSS จับภาพพลาดหรือไม่ (มักเกิดกับ Fullscreen Apps)"""
+    """Check if MSS missed capturing the image (this often happens with fullscreen apps)."""
     if img.height < screen["height"] * 0.25:
         return True
     if (win and win["width"] >= screen["width"] * 0.95 and 
@@ -207,13 +211,18 @@ def is_bad_mss_capture(img, win, screen):
 
 def capture_active_window_screenshot(output_file: str):
     """
-    ฟังก์ชันหลักในการจับภาพหน้าต่างที่ Active:
-    1. ถ้าเป็นหน้าต่างปกติ จะพยายาม Crop เฉพาะตัวแอป (MSS)
-    2. ถ้าเป็น Fullscreen หรือหาพิกัดไม่ได้ จะถ่ายทั้งหน้าจอที่เมาส์อยู่ (Quartz)
+    The main functions for capturing the active window are:
+    1. If it's a normal window, it will attempt to crop only the app section (MSS).
+    2. If it's fullscreen or the location cannot be determined, it will capture the entire screen where the mouse is located (Quartz).
     """
+    # --- check Lock Screen ---
+    if is_screen_locked():
+        logger.warning("[SKIP] Screen is locked. Skipping window screenshot.")
+        return None
+    
     win = get_active_window_bounds()
     
-    # ตรวจสอบว่าเป็นหน้าต่างแอปปกติหรือไม่ (ถ้าสูงน้อยกว่า 100 มักจะเป็นแค่ Title Bar ลวง)
+    # check height window
     is_normal_window = win and win["height"] > 100
 
     if is_normal_window:
@@ -228,11 +237,11 @@ def capture_active_window_screenshot(output_file: str):
                         if not is_bad_mss_capture(grab, win, screen):
                             img = Image.frombytes("RGB", grab.size, grab.rgb)
                             img.save(output_file)
-                            return # สำเร็จ: ออกจากฟังก์ชันทันที
+                            return 
                 except Exception as e:
                     logger.warning(f"MSS Capture failed, falling back: {e}")
 
-    # Fallback Case: ใช้สำหรับ Fullscreen หรือกรณีที่ MSS ทำงานผิดพลาด
+    # Fallback Case: Used for Fullscreen mode or in cases where MSS malfunctions.
     # logger.info("[CASE 2] Smart Fallback -> Capturing full display via Quartz")
     display_id = get_display_id_from_mouse()
     
@@ -244,44 +253,59 @@ def capture_active_window_screenshot(output_file: str):
         Quartz.CGImageDestinationFinalize(dest)
 
 def capture_fullscreen(output_file: str):
-    """จับภาพหน้าจอทั้งหมด พร้อมวาดเส้นแดงล้อมรอบสิ่งที่กำลัง Active (Window หรือ Fullscreen)"""
-    win = get_active_window_bounds()
+    """
+    Capture the entire screen and draw a red line around the active item.
+    Add a system to prevent device lock and capture errors from CoreGraphics.
+    """
+
+    # check Lock Screen
+    if is_screen_locked():
+        logger.warning("[SKIP] Screen is locked. Skipping fullscreen screenshot.")
+        return None
     
-    # เช็คว่าเป็นหน้าต่างปกติหรือไม่ (ความสูงเกิน 100)
-    is_normal_window = win and win["height"] > 100
+    try:
+        win = get_active_window_bounds()
+        
+        # check window height > 100
+        is_normal_window = win and win["height"] > 100
 
-    with mss() as sct:
-        # 1. จับภาพพื้นที่ Virtual Desktop ทั้งหมด (ทุกจอมัดรวมกัน)
-        monitor_all = sct.monitors[0] 
-        screenshot = sct.grab(monitor_all)
-        img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
-        draw = ImageDraw.Draw(img)
-        thickness = 3
-
-        # 2. ส่วนการวาดกรอบ (Decision Logic)
-        if is_normal_window:
-            # --- CASE ปกติ: วาดรอบหน้าต่างแอป ---
-            left = win["left"] - monitor_all["left"]
-            top = win["top"] - monitor_all["top"]
-            right, bottom = left + win["width"], top + win["height"]
-            # logger.info(f"[BORDER] Drawing around Window: {win['owner']}")
-        else:
-            # --- CASE Fullscreen: วาดรอบหน้าจอที่เมาส์อยู่ ---
-            display_id = get_display_id_from_mouse()
-            d_bounds = Quartz.CGDisplayBounds(display_id)
+        with mss() as sct:
+            # all monitor
+            monitor_all = sct.monitors[0] 
             
-            left = int(d_bounds.origin.x) - monitor_all["left"]
-            top = int(d_bounds.origin.y) - monitor_all["top"]
-            right = left + int(d_bounds.size.width)
-            bottom = top + int(d_bounds.size.height)
-            # logger.info("[BORDER] Drawing around Full Screen (Mouse Position)")
+            screenshot = sct.grab(monitor_all)
+            
+            img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+            draw = ImageDraw.Draw(img)
+            thickness = 3
 
-        # 3. ลงมือวาดเส้นตามพิกัดที่เลือกมา
-        for i in range(thickness):
-            draw.rectangle([left - i, top - i, right + i, bottom + i], outline="red")
+            # Decision Logic
+            if is_normal_window:
+                # --- nomal CASE
+                left = win["left"] - monitor_all["left"]
+                top = win["top"] - monitor_all["top"]
+                right, bottom = left + win["width"], top + win["height"]
+            else:
+                # --- CASE Fullscreen/Unknown: choose monitor with active mouse ---
+                display_id = get_display_id_from_mouse()
+                d_bounds = Quartz.CGDisplayBounds(display_id)
+                
+                left = int(d_bounds.origin.x) - monitor_all["left"]
+                top = int(d_bounds.origin.y) - monitor_all["top"]
+                right = left + int(d_bounds.size.width)
+                bottom = top + int(d_bounds.size.height)
 
-        img.save(output_file)
-    return output_file
+            # draw red line
+            for i in range(thickness):
+                draw.rectangle([left - i, top - i, right + i, bottom + i], outline="red")
+
+            img.save(output_file)
+            # logger.info(f"[SUCCESS] Fullscreen captured with border: {output_file}")
+            return output_file
+
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to capture or process fullscreen: {e}")
+        return None
 
 
 
