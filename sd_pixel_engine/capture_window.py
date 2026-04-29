@@ -19,6 +19,7 @@ BLACK_PIXEL_THRESHOLD = 10
 BOX_THICKNESS = 4
 BOX_COLOR = (255, 0, 0)  # Red in RGB
 
+
 def get_true_window_rect(hwnd: int) -> Optional[Tuple[int, int, int, int]]:
     """
     Get the true window bounds excluding DWM shadows (Windows only).
@@ -41,52 +42,59 @@ def get_true_window_rect(hwnd: int) -> Optional[Tuple[int, int, int, int]]:
     except Exception as e:
         logger.info(f"Failed to get window rect via DWM: {e}")
         return None
-
-def capture_screenshots(filename, ocr_filename):
-    # Ensure DPI awareness is set before any coordinate calls
+    
+def capture_screenshots(filename: str, ocr_filename: str):
+    # Set DPI Awareness
     try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(DPI_AWARENESS_LEVEL) # Process_Per_Monitor_DPI_Aware
+        ctypes.windll.shcore.SetProcessDpiAwareness(DPI_AWARENESS_LEVEL)
     except Exception:
         ctypes.windll.user32.SetProcessDPIAware()
 
     hwnd = ctypes.windll.user32.GetForegroundWindow()
     if not hwnd:
-        print("No active window found.")
+        logger.warning("No active window found.")
         return
 
-    # Get the "Clean" coordinates (no shadows)
-    wx1, wy1, wx2, wy2 = get_true_window_rect(hwnd)
+    rect = get_true_window_rect(hwnd)
+    if not rect: return
+    wx1, wy1, wx2, wy2 = rect
 
     with mss.mss() as sct:
-        # sct.monitors[0] is the virtual desktop covering ALL monitors
         monitor_all = sct.monitors[0]
-        
-        # Capture the entire virtual desktop at once
-        # This is more reliable than stitching individual monitors manually
         shot = sct.grab(monitor_all)
         canvas = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
 
+        # Virtual screen offsets
         vx1, vy1 = monitor_all["left"], monitor_all["top"]
 
         # Calculate relative crop coordinates
-        crop_x1 = wx1 - vx1
-        crop_y1 = wy1 - vy1
-        crop_x2 = wx2 - vx1
-        crop_y2 = wy2 - vy1
+        cx1, cy1 = wx1 - vx1, wy1 - vy1
+        cx2, cy2 = wx2 - vx1, wy2 - vy1
 
-        # 1. Save the clean crop for OCR
-        active_window_crop = canvas.crop((crop_x1, crop_y1, crop_x2, crop_y2))
+        # --- FIX FOR WINDOWS 11 PRO TOP BORDER ---
+        # If cy1 is 0 or negative, Windows has 'hidden' the top frame.
+        # We manually offset it so the red border is forced into the visible canvas.
+        safe_top = max(cy1, 0) + (BOX_THICKNESS // 2)
+        
+        # Ensure we don't clip the other sides either
+        safe_left = max(cx1, 0) + (BOX_THICKNESS // 2)
+        safe_right = min(cx2, canvas.width) - (BOX_THICKNESS // 2)
+        safe_bottom = min(cy2, canvas.height) - (BOX_THICKNESS // 2)
+
+        # 1. Save CLEAN crop for OCR (Using original coords)
+        active_window_crop = canvas.crop((cx1, cy1, cx2, cy2))
         active_window_crop.save(ocr_filename)
 
-        # 2. Draw the red box on the full canvas for the "context" shot
-        draw = ImageDraw.Draw(canvas)        
+        # 2. Draw the Box on the context shot using SAFE coordinates
+        draw = ImageDraw.Draw(canvas)
         draw.rectangle(
-                [crop_x1, crop_y1, crop_x2, crop_y2],
-                outline=BOX_COLOR,
-                width=BOX_THICKNESS
-            )        
+            [safe_left, safe_top, safe_right, safe_bottom],
+            outline=BOX_COLOR,
+            width=BOX_THICKNESS
+        )
+        
         canvas.save(filename)
-
+   
 def crop_black_background(image_path: str, 
                           output_path: Optional[str] = None, 
                           threshold: int = BLACK_PIXEL_THRESHOLD):
