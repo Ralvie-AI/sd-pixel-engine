@@ -100,7 +100,11 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError("Boolean value expected (true/false).")
 
-# exclude Process 
+# ------------------------------
+# Constants
+# ------------------------------
+
+# System-level processes that should be ignored
 EXCLUDED_OWNERS = {
     "Window Server",
     "Dock",
@@ -110,48 +114,66 @@ EXCLUDED_OWNERS = {
     "TextInputMenuAgent"
 }
 
-# --- Helper Functions: Window & Screen Management ---
+
+# ------------------------------
+# Helper Functions
+# ------------------------------
 
 def is_screen_locked():
-    """check lock screen macOS """
+    """Return True if macOS screen is locked."""
     session_info = Quartz.CGSessionCopyCurrentDictionary()
     if session_info:
         return session_info.get("CGSSessionScreenIsLocked", False)
     return False
 
-def get_active_window_bounds():
-    """Extract the coordinates of the currently active window, filtering to show only the apps that the user is actually using."""
+
+def get_active_window_info():
+    """
+    Return the top-most valid window (based on Z-order).
+    
+    Filtering strategy:
+    - Skip system processes
+    - Skip very small windows (notifications, toolbars)
+    - Do NOT rely on layer (important for fullscreen support)
+    """
     window_list = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly,
         Quartz.kCGNullWindowID
     )
 
     for win in window_list:
+
         if not win.get("kCGWindowIsOnscreen"):
             continue
 
         owner = win.get("kCGWindowOwnerName", "")
-        layer = win.get("kCGWindowLayer")
         bounds = win.get("kCGWindowBounds")
 
-        if layer != 0:
-            continue
-        if owner in EXCLUDED_OWNERS:
-            continue
         if not bounds:
             continue
 
+        # Skip system UI
+        if owner in EXCLUDED_OWNERS:
+            continue
+
+        # Skip small windows (likely notifications / fragments)
+        if bounds["Width"] < 300 or bounds["Height"] < 200:
+            continue
+
         return {
+            "id": win.get("kCGWindowNumber"),
             "left": int(bounds["X"]),
             "top": int(bounds["Y"]),
             "width": int(bounds["Width"]),
             "height": int(bounds["Height"]),
             "owner": owner,
         }
+
     return None
 
+
 def get_screen_for_window(win):
-    """Check which monitor the specified window is located on."""
+    """Return the screen bounds where the window is located."""
     for screen in NSScreen.screens():
         frame = screen.frame()
         s_bounds = {
@@ -160,32 +182,44 @@ def get_screen_for_window(win):
             "width": int(frame.size.width),
             "height": int(frame.size.height),
         }
-        # Check overlap
+
+        # Check overlap between window and screen
         if (win["left"] < s_bounds["left"] + s_bounds["width"] and
             win["left"] + win["width"] > s_bounds["left"] and
             win["top"] < s_bounds["top"] + s_bounds["height"] and
             win["top"] + win["height"] > s_bounds["top"]):
             return s_bounds
+
     return None
 
+
 def get_display_id_from_mouse():
-    """Find the Display ID of the screen where the mouse is currently hovering (used for Fullscreen Fallback)."""
+    """
+    Return display ID based on current mouse position.
+    Used for fullscreen fallback when window detection is unreliable.
+    """
     mouse_event = Quartz.CGEventCreate(None)
     mouse_loc = Quartz.CGEventGetLocation(mouse_event)
-    
+
     max_displays = 16
     err, active_displays, display_count = Quartz.CGGetActiveDisplayList(max_displays, None, None)
-    
+
     for i in range(display_count):
         display_id = active_displays[i]
         bounds = Quartz.CGDisplayBounds(display_id)
+
         if (bounds.origin.x <= mouse_loc.x < bounds.origin.x + bounds.size.width and
             bounds.origin.y <= mouse_loc.y < bounds.origin.y + bounds.size.height):
             return display_id
+
     return Quartz.CGMainDisplayID()
 
+
 def clamp_region(region, screen):
-    """Crop the window's edges so they don't exceed the actual screen boundaries."""
+    """
+    Ensure the capture region stays within screen bounds.
+    Prevents invalid or out-of-range capture areas.
+    """
     left = max(region["left"], screen["left"])
     top = max(region["top"], screen["top"])
     right = min(region["left"] + region["width"], screen["left"] + screen["width"])
@@ -197,54 +231,128 @@ def clamp_region(region, screen):
 
     return {"left": int(left), "top": int(top), "width": int(width), "height": int(height)}
 
+
 def is_bad_mss_capture(img, win, screen):
-    """Check if MSS missed capturing the image (this often happens with fullscreen apps)."""
+    """
+    Detect failed MSS captures.
+    
+    Common failure cases:
+    - Very small image (capture failed)
+    - Fullscreen app but captured image is too small
+    """
     if img.height < screen["height"] * 0.25:
         return True
-    if (win and win["width"] >= screen["width"] * 0.95 and 
-        win["height"] >= screen["height"] * 0.95 and 
+
+    if (win and win["width"] >= screen["width"] * 0.95 and
+        win["height"] >= screen["height"] * 0.95 and
         img.height < screen["height"] * 0.9):
         return True
+
     return False
 
-# --- Main Screenshot Functions ---
+
+def is_likely_fullscreen(win, screen):
+    """Heuristic check if window is fullscreen."""
+    if not win or not screen:
+        return False
+
+    return (
+        win["width"] >= screen["width"] * 0.95 and
+        win["height"] >= screen["height"] * 0.95
+    )
+
+
+def capture_active_window_direct_with_info(win, output_file: str):
+    """
+    Capture a single window directly using Quartz.
+    
+    Pros:
+    - Clean (no overlay / no obstruction)
+    
+    Cons:
+    - May fail for fullscreen / system-layer windows
+    """
+    if not win:
+        return None
+
+    image = Quartz.CGWindowListCreateImage(
+        Quartz.CGRectNull,
+        Quartz.kCGWindowListOptionIncludingWindow,
+        win["id"],
+        Quartz.kCGWindowImageBoundsIgnoreFraming
+    )
+
+    if not image:
+        return None
+
+    url = Quartz.CFURLCreateWithFileSystemPath(
+        None, output_file,
+        Quartz.kCFURLPOSIXPathStyle,
+        False
+    )
+
+    dest = Quartz.CGImageDestinationCreateWithURL(url, "public.png", 1, None)
+    Quartz.CGImageDestinationAddImage(dest, image, None)
+    Quartz.CGImageDestinationFinalize(dest)
+
+    return output_file
+
+
+# ------------------------------
+# Main Capture Functions
+# ------------------------------
 
 def capture_active_window_screenshot(output_file: str):
     """
-    The main functions for capturing the active window are:
-    1. If it's a normal window, it will attempt to crop only the app section (MSS).
-    2. If it's fullscreen or the location cannot be determined, it will capture the entire screen where the mouse is located (Quartz).
-    """
-    # --- check Lock Screen ---
-    if is_screen_locked():
-        logger.warning("[SKIP] Screen is locked. Skipping window screenshot.")
-        return None
-    
-    win = get_active_window_bounds()
-    
-    # check height window
-    is_normal_window = win and win["height"] > 100
+    Capture the active window with multi-step fallback strategy:
 
-    if is_normal_window:
-        # logger.info(f"[CASE 1] Capturing Window: {win['owner']}")
-        screen = get_screen_for_window(win)
+    STEP A:
+    - Try direct window capture (best quality)
+    - Skip if fullscreen
+
+    STEP B:
+    - Use MSS region crop
+
+    STEP C:
+    - Fallback to full display capture
+    """
+
+    if is_screen_locked():
+        logger.warning("[SKIP] Screen is locked.")
+        return None
+
+    win = get_active_window_info()
+    if not win:
+        return None
+
+    screen = get_screen_for_window(win)
+
+    # STEP A: Direct capture (only for non-fullscreen)
+    if not (screen and is_likely_fullscreen(win, screen)):
+        result = capture_active_window_direct_with_info(win, output_file)
+        if result:
+            return result
+
+    # STEP B: MSS region capture
+    if win["height"] > 100:
         if screen:
             region = clamp_region(win, screen)
             if region:
                 try:
                     with mss() as sct:
                         grab = sct.grab(region)
+
                         if not is_bad_mss_capture(grab, win, screen):
                             img = Image.frombytes("RGB", grab.size, grab.rgb)
                             img.save(output_file)
-                            return 
-                except Exception as e:
-                    logger.warning(f"MSS Capture failed, falling back: {e}")
+                            return output_file
 
-    # Fallback Case: Used for Fullscreen mode or in cases where MSS malfunctions.
-    # logger.info("[CASE 2] Smart Fallback -> Capturing full display via Quartz")
+                except Exception as e:
+                    logger.warning(f"MSS fallback failed: {e}")
+
+    # STEP C: Final fallback (full display)
     display_id = get_display_id_from_mouse()
-    
+
     image = Quartz.CGDisplayCreateImage(display_id)
     if image:
         url = Quartz.CFURLCreateWithFileSystemPath(None, output_file, Quartz.kCFURLPOSIXPathStyle, False)
@@ -252,62 +360,62 @@ def capture_active_window_screenshot(output_file: str):
         Quartz.CGImageDestinationAddImage(dest, image, None)
         Quartz.CGImageDestinationFinalize(dest)
 
+    return output_file
+
+
 def capture_fullscreen(output_file: str):
     """
-    Capture the entire screen and draw a red line around the active item.
-    Add a system to prevent device lock and capture errors from CoreGraphics.
+    Capture full screen and highlight active window with a red border.
+    
+    Cases:
+    - Normal window → draw border around window
+    - Fullscreen / unknown → highlight entire active display
     """
 
-    # check Lock Screen
     if is_screen_locked():
-        logger.warning("[SKIP] Screen is locked. Skipping fullscreen screenshot.")
+        logger.warning("[SKIP] Screen is locked.")
         return None
-    
+
     try:
-        win = get_active_window_bounds()
-        
-        # check window height > 100
+        win = get_active_window_info()
         is_normal_window = win and win["height"] > 100
 
         with mss() as sct:
-            # all monitor
-            monitor_all = sct.monitors[0] 
-            
+            monitor_all = sct.monitors[0]
             screenshot = sct.grab(monitor_all)
-            
+
             img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
             draw = ImageDraw.Draw(img)
             thickness = 3
 
-            # Decision Logic
             if is_normal_window:
-                # --- nomal CASE
+                # Draw border around detected window
                 left = win["left"] - monitor_all["left"]
                 top = win["top"] - monitor_all["top"]
-                right, bottom = left + win["width"], top + win["height"]
+                right = left + win["width"]
+                bottom = top + win["height"]
             else:
-                # --- CASE Fullscreen/Unknown: choose monitor with active mouse ---
+                # Fullscreen fallback → highlight entire display
                 display_id = get_display_id_from_mouse()
                 d_bounds = Quartz.CGDisplayBounds(display_id)
-                
+
                 left = int(d_bounds.origin.x) - monitor_all["left"]
                 top = int(d_bounds.origin.y) - monitor_all["top"]
                 right = left + int(d_bounds.size.width)
                 bottom = top + int(d_bounds.size.height)
 
-            # draw red line
             for i in range(thickness):
-                draw.rectangle([left - i, top - i, right + i, bottom + i], outline="red")
+                draw.rectangle(
+                    [left - i, top - i, right + i, bottom + i],
+                    outline="red"
+                )
 
             img.save(output_file)
-            # logger.info(f"[SUCCESS] Fullscreen captured with border: {output_file}")
             return output_file
 
     except Exception as e:
-        logger.error(f"[ERROR] Failed to capture or process fullscreen: {e}")
+        logger.error(f"[ERROR] Fullscreen capture failed: {e}")
         return None
-
-
 
 
 if __name__ == '__main__':
