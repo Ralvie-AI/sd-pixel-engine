@@ -363,7 +363,7 @@ def capture_active_window_screenshot(output_file: str):
     return output_file
 
 
-def capture_fullscreen(output_file: str):
+def capture_fullscreen_old(output_file: str):
     """
     Capture full screen and highlight active window with a red border.
     
@@ -417,6 +417,98 @@ def capture_fullscreen(output_file: str):
         logger.error(f"[ERROR] Fullscreen capture failed: {e}")
         return None
 
+def capture_fullscreen(output_file: str):
+    if is_screen_locked():
+        logger.warning("[SKIP] Screen is locked.")
+        return None
+
+    try:
+        win = get_active_window_info()
+        is_normal_window = win and win["height"] > 100
+
+        with mss() as sct:
+            monitor_all = sct.monitors[0]
+            screenshot = sct.grab(monitor_all)
+
+            img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+            draw = ImageDraw.Draw(img)
+
+            thickness = 3
+
+            # -----------------------------
+            # Compute bounds (image space)
+            # -----------------------------
+            if is_normal_window:
+                left = win["left"] - monitor_all["left"]
+                top = win["top"] - monitor_all["top"]
+                right = left + win["width"] - 1
+                bottom = top + win["height"] - 1
+            else:
+                display_id = get_display_id_from_mouse()
+                d_bounds = Quartz.CGDisplayBounds(display_id)
+
+                left = int(d_bounds.origin.x) - monitor_all["left"]
+                top = int(d_bounds.origin.y) - monitor_all["top"]
+                right = left + int(d_bounds.size.width) - 1
+                bottom = top + int(d_bounds.size.height) - 1
+
+            img_w, img_h = img.size
+
+            # -----------------------------
+            # Detect clipping (IMPORTANT)
+            # -----------------------------
+            clipped_left = left < 0
+            clipped_top = top < 0
+            clipped_right = right >= img_w
+            clipped_bottom = bottom >= img_h
+
+            # -----------------------------
+            # Clamp into image bounds
+            # -----------------------------
+            left = max(0, left)
+            top = max(0, top)
+            right = min(img_w - 1, right)
+            bottom = min(img_h - 1, bottom)
+
+            # -----------------------------
+            # Draw border (fixed)
+            # -----------------------------
+            for i in range(thickness):
+
+                # top
+                y_top = top - i if not clipped_top else top + i
+                draw.line(
+                    [(left, max(0, y_top)), (right, max(0, y_top))],
+                    fill="red"
+                )
+
+                # bottom
+                y_bottom = bottom + i if not clipped_bottom else bottom - i
+                draw.line(
+                    [(left, min(img_h - 1, y_bottom)), (right, min(img_h - 1, y_bottom))],
+                    fill="red"
+                )
+
+                # left
+                x_left = left - i if not clipped_left else left + i
+                draw.line(
+                    [(max(0, x_left), top), (max(0, x_left), bottom)],
+                    fill="red"
+                )
+
+                # right 
+                x_right = right + i if not clipped_right else right - i
+                draw.line(
+                    [(min(img_w - 1, x_right), top), (min(img_w - 1, x_right), bottom)],
+                    fill="red"
+                )
+
+            img.save(output_file)
+            return output_file
+
+    except Exception as e:
+        logger.error(f"[ERROR] Fullscreen capture failed: {e}")
+        return None
 
 if __name__ == '__main__':
     # add_second_to_utc("2026-01-14 06:49:15.373000+00:00", 2.015)
