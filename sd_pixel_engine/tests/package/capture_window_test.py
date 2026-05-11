@@ -1,6 +1,8 @@
 import os
 import logging
 from typing import Tuple, Optional
+import time 
+from datetime import datetime
 
 import mss
 import ctypes
@@ -93,45 +95,79 @@ def crop_black_background(image_path: str,
                           threshold: int = BLACK_PIXEL_THRESHOLD):
     """
     Detects and crops black background from an image.
-    
-    Args:
-        image_path: Path to input image
-        output_path: Path to save cropped image (optional)
-        threshold: Pixel value threshold to consider as "black" (0-255)    
     """
     # Load image
     img = cv2.imread(image_path)
     
-    # --- Step 1: Check if black background exists ---
+    # Check if image exists to avoid crashes
+    if img is None:
+        logger.warning(f"Could not read image: {image_path}")
+        return
+
+    # Check if black background exists
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     black_pixels = np.sum(gray <= threshold)
     total_pixels = gray.size
     black_ratio = black_pixels / total_pixels
         
-    if black_ratio > BLACK_RATIO_THRESHOLD:  # More than 5% black pixels
+    if black_ratio > BLACK_RATIO_THRESHOLD: 
         logger.info("Black background detected!")
     else:
         logger.info("No significant black background found.")
-        return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        return
 
-    # --- Step 2: Create a mask of non-black pixels ---
-    mask = gray > threshold  # True where pixels are NOT black
+    # Create a mask of non-black pixels
+    mask = gray > threshold
 
-    # --- Step 3: Find bounding box of non-black content ---
-    coords = np.argwhere(mask)          # All non-black pixel coordinates
-    y_min, x_min = coords.min(axis=0)  # Top-left corner
-    y_max, x_max = coords.max(axis=0)  # Bottom-right corner
-    
-    # print(f"Content bounding box: ({x_min}, {y_min}) → ({x_max}, {y_max})")
+    # Find bounding box of non-black content
+    coords = np.argwhere(mask)
+    if len(coords) == 0:
+        return # Empty image
+        
+    y_min, x_min = coords.min(axis=0)
+    y_max, x_max = coords.max(axis=0)
 
-    # --- Step 4: Crop the image ---
+    # Crop the image
     cropped = img[y_min:y_max+1, x_min:x_max+1]
     
     # Convert BGR (OpenCV) → RGB (PIL)
     cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
     result = Image.fromarray(cropped_rgb)
 
-    # --- Step 5: Save if output path provided ---
+    # Save if output path provided
     if output_path:
-        os.remove(image_path)
         result.save(output_path)
+        if os.path.exists(image_path):
+            os.remove(image_path) # Clean up original
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    logger.info("Starting automated screen capture script with timestamping. Press Ctrl+C to exit.")
+    
+    folder = datetime.today().strftime("%Y-%m-%d")
+    if not os.path.exists(folder):
+        os.mkdir(folder)
+
+    while True:
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            output_image = f"{folder}/{timestamp}.png"
+            ocr_image = f"{folder}/{timestamp}_ocr.png"
+            final_output = f"{folder}/{timestamp}_black_crop.png"
+            
+            # Execute captures
+            capture_screenshots(output_image, ocr_image)
+            
+            # Run background crop if the base file exists
+            if os.path.exists(ocr_image):
+                # Run the crop only on the OCR-cropped image to prevent background skewing
+                crop_black_background(ocr_image, final_output)
+            
+            # Wait 30 seconds before repeating
+            time.sleep(30)
+            
+        except Exception as e:
+            logger.error(f"Error occurred during capture iteration: {e}")
+            time.sleep(30)
