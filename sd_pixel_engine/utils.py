@@ -146,6 +146,13 @@ def get_active_window_info():
         if not win.get("kCGWindowIsOnscreen"):
             continue
 
+        # IMPORTANT: filter system/overlay layers
+        layer = win.get("kCGWindowLayer", 0)
+
+        # normal app windows = layer 0
+        if layer != 0:
+            continue
+
         owner = win.get("kCGWindowOwnerName", "")
         bounds = win.get("kCGWindowBounds")
 
