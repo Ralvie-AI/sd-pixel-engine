@@ -199,6 +199,10 @@ class ScreenShot:
             # capture_time =  datetime.now(timezone.utc)
 
             screenshot_path, event_id = self.get_image_path_and_event_id()
+            if not screenshot_path:
+                logger.info("Skipping this scheduled cycle because no new screenshots are available.")
+                return 
+            
             # logger.error(f"[DEBUG BEFORE PARSE] screenshot_path => {screenshot_path}")
             capture_time = get_image_name_to_utc_dt(screenshot_path)
             payload = {
@@ -227,137 +231,122 @@ class ScreenShot:
             [f for f in filename_list if "_active" not in os.path.basename(f)],
             reverse=False
         )
-        # logger.error(f"[DEBUG FILE LIST] => {filename_list_tmp}")
+        # GUARD CLAUSE: Handle empty list when screen is locked or system is idle.
+        # Prevents IndexError: list index out of range when accessing filename_list_tmp[-1].
+        if not filename_list_tmp:
+            logger.warning("No screenshot files found. System might be idle or screen locked.")
+            # Clean up any leftover or orphaned files to maintain folder state
+            for remaining_file in filename_list:
+                try:
+                    os.remove(remaining_file)
+                except Exception as e:
+                    logger.error(f"Failed to remove residual file: {e}")
+            return "", ""
+    
+        # Determine time range from available files safely
         if len(filename_list_tmp) == 1: 
             start_time = get_image_name_to_utc(filename_list_tmp[0])
             end_time = get_image_name_to_utc(filename_list_tmp[0])
         else:
             start_time = get_image_name_to_utc(filename_list_tmp[0])
             end_time = get_image_name_to_utc(filename_list_tmp[-1])
-
+    
         payload = {
             'start_time': start_time,
-            'end_time': end_time,               
+            'end_time': end_time,                
         }
-
+    
         logger.info(f"screenshot time range => {payload}")
         response = requests.post(self.server_url + "get_event_time_range", json=payload)
-        response.raise_for_status() # Raise an exception for bad status codes
-
-        # logger.info(f"Upload response time_specific => {response.json()}")
+        response.raise_for_status()
+    
         response_result_tmp = response.json()
-        # logger.info(f"response_result 1 => {type(response_result_tmp.get('result'))}")
         response_result = json.loads(response_result_tmp["result"])
-        # logger.info(f"response_result => {type(response_result)}")
-        # logger.info(f"response_result => {response_result}")
-
+    
         if not os.path.isdir(SCREENSHOT_FOLDER):
             os.makedirs(SCREENSHOT_FOLDER)
-
+    
         screenshot_to_events = []
         if response_result:
             for tmp_file in filename_list_tmp:
                 file_utc_time = get_image_name_to_utc(tmp_file)
-                # logger.info(f"file_utc_time => {file_utc_time}")
-                
                 for row in response_result:
                     start_time, end_time = add_second_to_utc(row.get('timestamp'), row.get('duration'))
                     if start_time <= file_utc_time <= end_time:
                         tmp_dict = {}
                         tmp_dict[tmp_file] = row
                         screenshot_to_events.append(tmp_dict)
-            # logger.info(f"result => {screenshot_to_events}")
-            
+            # Fallback condition if screenshots exist but do not match the API time range
             if not screenshot_to_events:
                 logger.info("No screenshot matched event range. Fallback to last event.")
-
+    
                 last_event = response_result[-1]
                 tmp_file = filename_list_tmp[-1]
-
+    
                 screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
                 shutil.copy2(tmp_file, screenshot_path)
-
-                # copy active
+    
                 active_src = tmp_file.replace(".png", "_active.png")
                 active_dst = screenshot_path.replace(".png", "_active.png")
-
+    
                 if os.path.exists(active_src):
                     shutil.copy2(active_src, active_dst)
                 else:
                     logger.error(f"[ACTIVE MISSING BEFORE COPY] {active_src}")
-
-                # delete หลัง copy เสร็จ
+    
                 for tmp_file_data in filename_list_tmp:
                     os.remove(tmp_file_data)
-
                     active_file = tmp_file_data.replace(".png", "_active.png")
                     if os.path.exists(active_file):
                         os.remove(active_file)
-
-                # logger.info(f"fallback screenshot_path => {screenshot_path}")
-                # logger.info(f"fallback event_id => {last_event.get('id')}")
-                # logger.error(f"[DEBUG RETURN] screenshot_path => {screenshot_path}")
+    
                 return screenshot_path, last_event.get("id")
-        
+            # Optimal matching scenario based on max duration
             max_row = max(reversed(screenshot_to_events), key=lambda x: list(x.values())[0]['duration'])
             tmp_file = list(max_row.keys())[0]
             screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
             shutil.copy2(tmp_file, screenshot_path)
-
-           # copy active
+    
             active_src = tmp_file.replace(".png", "_active.png")
             active_dst = screenshot_path.replace(".png", "_active.png")
-
+    
             if os.path.exists(active_src):
                 shutil.copy2(active_src, active_dst)
             else:
                 logger.error(f"[ACTIVE MISSING BEFORE COPY] {active_src}")
-
-            # delete หลัง copy เสร็จ
+    
             for tmp_file_data in filename_list_tmp:
                 os.remove(tmp_file_data)
-
                 active_file = tmp_file_data.replace(".png", "_active.png")
                 if os.path.exists(active_file):
                     os.remove(active_file)
-
-            # logger.info(f"screenshot_path => {screenshot_path}")
+    
             logger.info(f"event_id => {list(max_row.values())[0].get('id')}")
-            # logger.error(f"[DEBUG RETURN] screenshot_path => {screenshot_path}")
-            return screenshot_path, list(max_row.values())[0].get('id') 
-
+            return screenshot_path, list(max_row.values())[0].get('id')
+    
         else: 
-            # it will work for idle time
-            # {'start_time': '2026-01-20 01:30:16.221777', 'end_time': '2026-01-20 01:44:51.125691'}
-            # when the result of start time and end time are not in the range of screenshot image file name.
-            # so screenshot_path will be used the lastest screenshot and
-            # event_id will be used from the latest event row.
-            
+            # Fallback logic for when response_result from server is completely empty
             tmp_file = filename_list_tmp[-1]
             screenshot_path = os.path.join(SCREENSHOT_FOLDER, Path(tmp_file).name)
             shutil.copy2(tmp_file, screenshot_path)
-
-            # copy active
+    
             active_src = tmp_file.replace(".png", "_active.png")
             active_dst = screenshot_path.replace(".png", "_active.png")
-
+    
             if os.path.exists(active_src):
                 shutil.copy2(active_src, active_dst)
             else:
                 logger.error(f"[ACTIVE MISSING BEFORE COPY] {active_src}")
-
+    
             for tmp_file_data in filename_list_tmp:
-                # ลบ full
                 os.remove(tmp_file_data)
-
-                # ลบ active คู่กัน
                 active_file = tmp_file_data.replace(".png", "_active.png")
                 if os.path.exists(active_file):
                     os.remove(active_file)
             logger.info(f"idle time screenshot_path => {screenshot_path}")
             logger.info(f"idle time event_id => {response_result_tmp.get('event_id')}")
-            # logger.error(f"[DEBUG RETURN] screenshot_path => {screenshot_path}")
-            return screenshot_path, response_result_tmp.get('event_id')     
+            return screenshot_path, response_result_tmp.get('event_id')
+    
 
     # Always Option Tracking Interval
     
@@ -376,7 +365,7 @@ class ScreenShot:
 
         return today_start + interval * intervals_passed
 
-    
+
     def run_always(self):
         logger.info(
             f"Anchored mode: {self.times_per_hour} screenshots/hour "
@@ -387,49 +376,69 @@ class ScreenShot:
         logger.info(f"First anchored screenshot at {next_run.strftime('%H:%M:%S')}")
 
         while True:
-            try:  
+            try:
                 now = datetime.now()
-
+                if next_run <= now:
+                    logger.warning(f"System wake up or lag detected. Re-aligning target time from {next_run.strftime('%H:%M:%S')}...")
+                    next_run = self._next_anchored_time(now)
+    
                 sleep_seconds = (next_run - now).total_seconds()
+
                 while sleep_seconds > 0:
                     self._take_screenshot_30_seconds()
-                    # sleep 30s or remaining time (whichever is smaller)
                     sleep_chunk = min(INTERVAL, sleep_seconds)
-                    # logger.info(f"sleep_chunk => {sleep_chunk}")
                     time_sleep(sleep_chunk)
                     sleep_seconds -= sleep_chunk
 
+                    if datetime.now() >= next_run:
+                        break
+
                 logger.info("Taking anchored screenshot")
-
-                # capture_time = datetime.now(timezone.utc)
-
                 screenshot_path, event_id = self.get_image_path_and_event_id()
-                logger.error(f"screenshot_path DEBUG => {screenshot_path}")
+                logger.debug(f"screenshot_path DEBUG => {screenshot_path}")
+
+                # Safely skip execution if empty paths are returned due to locked screens
+                if not screenshot_path:
+                    logger.info("Skipping this cycle because no new screenshots are available.")
+                    next_run += timedelta(seconds=3600 / self.times_per_hour)
+                    continue
+
+                # Parsing issues (ValueError/IndexError) might happen here if filename structures drift
                 capture_time = get_image_name_to_utc_dt(screenshot_path)
                 payload = {
                     "file_location": screenshot_path,
                     "is_idle_screenshot": self.is_idle_screenshot,
                     "created_at": capture_time.isoformat(),
-                    'event_id': event_id
+                    "event_id": event_id,
                 }
-                response = requests.post(self.server_url, json=payload)
-                response.raise_for_status() # Raise an exception for bad status codes
-                # logger.info(f"Upload response always => {response.json()}")
 
-                # Move to next anchored slot
+                response = requests.post(self.server_url, json=payload)
+                response.raise_for_status()
+
+                # Normal operation progression path
                 next_run += timedelta(seconds=3600 / self.times_per_hour)
                 logger.info(f"Second anchored screenshot at {next_run.strftime('%H:%M:%S')}")
-                # Safety re-align (sleep / lag)
+
                 if next_run <= datetime.now():
                     next_run = self._next_anchored_time(datetime.now())
 
             except requests.exceptions.RequestException as req_e:
                 logger.error(f"API error: {req_e}")
                 time_sleep(10)
+                # Re-align next_run forward to avoid looping infinitely on server down-time
+                next_run = self._next_anchored_time(datetime.now())
 
             except Exception as e:
                 logger.error(f"Anchored scheduler error: {e}")
                 time_sleep(10)
+                # CRITICAL FIX: Forces next_run into the future on any unexpected crash
+                # This completely breaks the 10-second rapid error loop behavior.
+                next_run = self._next_anchored_time(datetime.now())
+
+            finally:
+                # Final safety check to realign targets during runtime slippage or system sleep events
+                if next_run <= datetime.now():
+                    next_run = self._next_anchored_time(datetime.now())
 
     def cleanup_old_screenshots(self):
             screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
