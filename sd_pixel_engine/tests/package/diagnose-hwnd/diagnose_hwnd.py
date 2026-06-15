@@ -26,6 +26,17 @@ except Exception:
 
 
 # ─────────────────────────────────────────────
+#  Helpers
+# ─────────────────────────────────────────────
+
+def get_windows_edition() -> Tuple[str, int]:
+    key_path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+        edition_id = winreg.QueryValueEx(key, "EditionID")[0]
+        build = int(winreg.QueryValueEx(key, "CurrentBuild")[0])
+    return edition_id, build
+
+# ─────────────────────────────────────────────
 #  Constants
 # ─────────────────────────────────────────────
 DWMWA_EXTENDED_FRAME_BOUNDS = 9
@@ -43,6 +54,50 @@ UNRELIABLE_DWM_CLASSES = {
     "Progman",                           # Program Manager / desktop
 }
 
+# ─────────────────────────────────────────────
+#  Logging setup
+# ─────────────────────────────────────────────
+
+def setup_logging(folder: str) -> logging.Logger:
+    logger = logging.getLogger("ScreenCapture")
+    logger.setLevel(logging.DEBUG)
+
+    fmt_file = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - "
+        "%(filename)s:%(lineno)d - %(funcName)s() - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    fmt_console = logging.Formatter(
+        "%(asctime)s - %(levelname)s - "
+        "%(filename)s:%(lineno)d - %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    fh = logging.FileHandler(
+        os.path.join(folder, "capture_log.txt"),
+        encoding="utf-8"
+    )
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(fmt_file)
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(fmt_console)
+
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+
+    return logger
+
+
+# Bootstrap logger early so helpers can use it
+_boot_folder = datetime.today().strftime("%Y-%m-%d")
+os.makedirs(_boot_folder, exist_ok=True)
+logger = setup_logging(_boot_folder)
+
+edition_id, build = get_windows_edition()
+logger.info(f"Windows build={build}  edition={edition_id}")
 
 # ─────────────────────────────────────────────
 #  Helpers
@@ -168,16 +223,6 @@ def setup_logging(folder: str) -> logging.Logger:
     logger.addHandler(fh)
     logger.addHandler(ch)
     return logger
-
-
-# Bootstrap logger early so helpers can use it
-_boot_folder = datetime.today().strftime("%Y-%m-%d")
-os.makedirs(_boot_folder, exist_ok=True)
-logger = setup_logging(_boot_folder)
-
-edition_id, build = get_windows_edition()
-logger.info(f"Windows build={build}  edition={edition_id}")
-
 
 # ─────────────────────────────────────────────
 #  Core capture
@@ -314,6 +359,79 @@ def crop_black_background(
             os.remove(image_path)
 
 
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+except Exception:
+    pass
+
+DWMWA_EXTENDED_FRAME_BOUNDS = 9
+DWMWA_CLOAKED = 14
+
+def get_window_class(hwnd):
+    buf = ctypes.create_unicode_buffer(256)
+    ctypes.windll.user32.GetClassNameW(hwnd, buf, 255)
+    return buf.value
+
+def get_window_title(hwnd):
+    buf = ctypes.create_unicode_buffer(256)
+    ctypes.windll.user32.GetWindowTextW(hwnd, buf, 255)
+    return buf.value
+
+def get_dwm_rect(hwnd):
+    try:
+        rect = wintypes.RECT()
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            wintypes.HWND(hwnd), wintypes.DWORD(DWMWA_EXTENDED_FRAME_BOUNDS),
+            ctypes.byref(rect), ctypes.sizeof(rect))
+        return rect.left, rect.top, rect.right, rect.bottom
+    except:
+        return None
+
+def get_winrect(hwnd):
+    try:
+        rect = wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect))
+        return rect.left, rect.top, rect.right, rect.bottom
+    except:
+        return None
+
+def get_client_rect(hwnd):
+    try:
+        rect = wintypes.RECT()
+        ctypes.windll.user32.GetClientRect(wintypes.HWND(hwnd), ctypes.byref(rect))
+        return rect.left, rect.top, rect.right, rect.bottom
+    except:
+        return None
+
+def is_cloaked(hwnd):
+    try:
+        val = ctypes.c_int(0)
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            wintypes.HWND(hwnd), wintypes.DWORD(DWMWA_CLOAKED),
+            ctypes.byref(val), ctypes.sizeof(val))
+        return val.value != 0
+    except:
+        return False
+
+def enum_children(hwnd, depth=0, max_depth=3):
+    if depth > max_depth:
+        return
+    children = []
+    def cb(child_hwnd, _):
+        children.append(child_hwnd)
+        return True
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int))
+    ctypes.windll.user32.EnumChildWindows(hwnd, EnumWindowsProc(cb), 0)
+    
+    for child in children[:10]:  # limit output
+        cls = get_window_class(child)
+        title = get_window_title(child)
+        wr = get_winrect(child)
+        cloaked = is_cloaked(child)
+        if wr and (wr[2]-wr[0]) > 50 and (wr[3]-wr[1]) > 50:
+            print(f"{'  '*depth}Child hwnd={child} class='{cls}' title='{title[:30]}' cloaked={cloaked}")
+            print(f"{'  '*depth}  GetWindowRect: {wr}  (w={wr[2]-wr[0]} h={wr[3]-wr[1]})")
+
 # ─────────────────────────────────────────────
 #  Main loop
 # ─────────────────────────────────────────────
@@ -336,7 +454,24 @@ def main() -> None:
             if os.path.exists(ocr_image):
                 crop_black_background(ocr_image, final_output)
 
-            time.sleep(15)
+
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            cls = get_window_class(hwnd)
+            title = get_window_title(hwnd)
+            cloaked = is_cloaked(hwnd)
+
+            logger.info(f"\n=== Foreground Window ===")
+            logger.info(f"hwnd={hwnd}  class='{cls}'  title='{title}'  cloaked={cloaked}")
+            logger.info(f"GetWindowRect:              {get_winrect(hwnd)}")
+            logger.info(f"DwmExtendedFrameBounds:     {get_dwm_rect(hwnd)}")
+            logger.info(f"GetClientRect (local):      {get_client_rect(hwnd)}")
+
+            logger.info(f"\n=== Children (w/h > 50px, depth<=3) ===")
+            enum_children(hwnd, depth=0)
+
+            logger.info("\nDone.")
+
+            time.sleep(5)
 
         except KeyboardInterrupt:
             logger.info("Stopped by user.")
