@@ -199,9 +199,9 @@ class ScreenShot:
             # capture_time =  datetime.now(timezone.utc)
 
             screenshot_path, event_id = self.get_image_path_and_event_id()
-            if not screenshot_path:
-                logger.info("Skipping this scheduled cycle because no new screenshots are available.")
-                return 
+            # if not screenshot_path:
+            #     logger.info("Skipping this scheduled cycle because no new screenshots are available.")
+            #     return 
             
             # logger.error(f"[DEBUG BEFORE PARSE] screenshot_path => {screenshot_path}")
             capture_time = get_image_name_to_utc_dt(screenshot_path)
@@ -231,17 +231,17 @@ class ScreenShot:
             [f for f in filename_list if "_active" not in os.path.basename(f)],
             reverse=False
         )
-        # GUARD CLAUSE: Handle empty list when screen is locked or system is idle.
-        # Prevents IndexError: list index out of range when accessing filename_list_tmp[-1].
-        if not filename_list_tmp:
-            logger.warning("No screenshot files found. System might be idle or screen locked.")
-            # Clean up any leftover or orphaned files to maintain folder state
-            for remaining_file in filename_list:
-                try:
-                    os.remove(remaining_file)
-                except Exception as e:
-                    logger.error(f"Failed to remove residual file: {e}")
-            return "", ""
+        # # GUARD CLAUSE: Handle empty list when screen is locked or system is idle.
+        # # Prevents IndexError: list index out of range when accessing filename_list_tmp[-1].
+        # if not filename_list_tmp:
+        #     logger.warning("No screenshot files found. System might be idle or screen locked.")
+        #     # Clean up any leftover or orphaned files to maintain folder state
+        #     for remaining_file in filename_list:
+        #         try:
+        #             os.remove(remaining_file)
+        #         except Exception as e:
+        #             logger.error(f"Failed to remove residual file: {e}")
+        #     return "", ""
     
         # Determine time range from available files safely
         if len(filename_list_tmp) == 1: 
@@ -378,9 +378,9 @@ class ScreenShot:
         while True:
             try:
                 now = datetime.now()
-                if next_run <= now:
-                    logger.warning(f"System wake up or lag detected. Re-aligning target time from {next_run.strftime('%H:%M:%S')}...")
-                    next_run = self._next_anchored_time(now)
+                # if next_run <= now:
+                #     logger.warning(f"System wake up or lag detected. Re-aligning target time from {next_run.strftime('%H:%M:%S')}...")
+                #     next_run = self._next_anchored_time(now)
     
                 sleep_seconds = (next_run - now).total_seconds()
 
@@ -390,18 +390,21 @@ class ScreenShot:
                     time_sleep(sleep_chunk)
                     sleep_seconds -= sleep_chunk
 
-                    if datetime.now() >= next_run:
-                        break
+                    # if datetime.now() >= next_run:
+                    #     break
 
                 logger.info("Taking anchored screenshot")
-                screenshot_path, event_id = self.get_image_path_and_event_id()
-                logger.debug(f"screenshot_path DEBUG => {screenshot_path}")
+                # screenshot_path, event_id = self.get_image_path_and_event_id()
+                # logger.debug(f"screenshot_path DEBUG => {screenshot_path}")
 
                 # Safely skip execution if empty paths are returned due to locked screens
                 if not screenshot_path:
                     logger.info("Skipping this cycle because no new screenshots are available.")
                     next_run += timedelta(seconds=3600 / self.times_per_hour)
                     continue
+
+                screenshot_path, event_id = self.get_image_path_and_event_id()
+                logger.error(f"screenshot_path DEBUG => {screenshot_path}")
 
                 # Parsing issues (ValueError/IndexError) might happen here if filename structures drift
                 capture_time = get_image_name_to_utc_dt(screenshot_path)
@@ -426,19 +429,19 @@ class ScreenShot:
                 logger.error(f"API error: {req_e}")
                 time_sleep(10)
                 # Re-align next_run forward to avoid looping infinitely on server down-time
-                next_run = self._next_anchored_time(datetime.now())
+                # next_run = self._next_anchored_time(datetime.now())
 
             except Exception as e:
                 logger.error(f"Anchored scheduler error: {e}")
                 time_sleep(10)
                 # CRITICAL FIX: Forces next_run into the future on any unexpected crash
                 # This completely breaks the 10-second rapid error loop behavior.
-                next_run = self._next_anchored_time(datetime.now())
+            #     next_run = self._next_anchored_time(datetime.now())
 
-            finally:
-                # Final safety check to realign targets during runtime slippage or system sleep events
-                if next_run <= datetime.now():
-                    next_run = self._next_anchored_time(datetime.now())
+            # finally:
+            #     # Final safety check to realign targets during runtime slippage or system sleep events
+            #     if next_run <= datetime.now():
+            #         next_run = self._next_anchored_time(datetime.now())
 
     def cleanup_old_screenshots(self):
             screenshot_folder = SCREENSHOT_FOLDER_USER.format(user_id=self.user_id)
