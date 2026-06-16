@@ -5,7 +5,7 @@ block_cipher = None
 
 
 a = Analysis(
-    ['capture_window_test.py'],
+    ['capture_window_main.py'],
     pathex=[],
     binaries=[],
     datas=[],

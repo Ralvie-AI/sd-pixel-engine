@@ -12,7 +12,7 @@ from PIL import Image
 
 from sd_pixel_engine.utils import get_image_name_to_utc, add_second_to_utc, stop_process_by_exe
 from sd_pixel_engine.const import INTERVAL, SCREENSHOT_FOLDER, SCREENSHOT_FOLDER_USER
-from sd_pixel_engine.capture_window import capture_screenshots, crop_black_background
+from sd_pixel_engine.capture_window import crop_black_background, capture_screenshots
 
 os.environ.pop('HTTP_PROXY', None)
 os.environ.pop('HTTPS_PROXY', None)
@@ -132,6 +132,8 @@ class ScreenShot:
                 screenshot_folder,
                 f"{self.user_id}_{timestamp}_ocr.png"
             )           
+            # capture_active_window_screenshot(output_file)
+            # capture_fullscreen(output_file, output_file_ocr)
             capture_screenshots(output_file, output_file_ocr)
 
         except Exception as e:

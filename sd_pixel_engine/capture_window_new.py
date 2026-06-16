@@ -1,68 +1,39 @@
-from datetime import datetime
-import os 
-import time 
+import os
 import logging
-import ctypes
 from typing import Optional
 
+
+import ctypes
 import win32gui
 import win32api
 import win32ui
+from PIL import Image, ImageDraw
 import cv2
 import numpy as np
 from mss import mss
-from PIL import Image, ImageDraw
+# Apply DPI awareness immediately when the script starts
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2) # PROCESS_PER_MONITOR_DPI_AWARE
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
 
 logger = logging.getLogger(__name__)
 
-# ─────────────────────────────────────────────
-#  Constants
-# ─────────────────────────────────────────────
+# Constants for DWM to get the real window size (minus shadows)
 DWMWA_EXTENDED_FRAME_BOUNDS = 9
-BLACK_RATIO_THRESHOLD = 0.05   # 5%
+BLACK_RATIO_THRESHOLD = 0.05  # 5%
 BLACK_PIXEL_THRESHOLD = 10
 BOX_THICKNESS = 4
-BOX_COLOR = (255, 0, 0)        # Red in RGB
-MIN_WINDOW_SIZE = 10           # px — anything smaller is a shell/invisible window
-
-# ─────────────────────────────────────────────
-#  Logging setup
-# ─────────────────────────────────────────────
-
-def setup_logging(folder: str) -> logging.Logger:
-    logger = logging.getLogger("ScreenCapture")
-    logger.setLevel(logging.DEBUG)
-
-    fmt_file = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    fmt_console = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(message)s",
-        datefmt="%H:%M:%S",
-    )
-
-    fh = logging.FileHandler(os.path.join(folder, "capture_log.txt"), encoding="utf-8")
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(fmt_file)
-
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    ch.setFormatter(fmt_console)
-
-    logger.addHandler(fh)
-    logger.addHandler(ch)
-    return logger
-
-
-# Bootstrap logger early so helpers can use it
-_boot_folder = datetime.today().strftime("%Y-%m-%d")
-os.makedirs(_boot_folder, exist_ok=True)
-logger = setup_logging(_boot_folder)
-
+BOX_COLOR = (255, 0, 0)  # Red in RGB
 
 # System window titles to ignore
-EXCLUDED_OWNERS = ["Program Manager", "Start", "", "Settings", "Notification Center", "Search"]
+WINDOW_10_EXCLUDED_OWNERS = ["Date and Time Information", "Cortana", "Action center", "News and interests", 
+                             "Meet Now", "Activity Center", "Network Connections", "Volume Control"]
+WINDOW_11_EXCLUDED_OWNERS = ["Program Manager", "Start", "", "Settings", "Notification Center", "Search"]
+EXCLUDED_OWNERS = WINDOW_10_EXCLUDED_OWNERS + WINDOW_11_EXCLUDED_OWNERS
 
 def is_screen_locked():
     """Returns True if the Windows workstation is locked or on a secure desktop."""
@@ -152,6 +123,7 @@ def clamp_region(region, screen):
         return None
 
     return {"left": int(left), "top": int(top), "width": int(width), "height": int(height)}
+
 def capture_active_window_direct_with_info(win, output_file):
     """STEP A: Direct native GDI capture of the window handle."""
     hwnd = win["id"]
@@ -330,78 +302,51 @@ def capture_fullscreen(output_file: str, ocr_file: str):
     except Exception as e:
         logger.error(f"[ERROR] Fullscreen capture failed: {e}")
         return None
-
-# ─────────────────────────────────────────────
-#  Black-background crop
-# ─────────────────────────────────────────────
-
-def crop_black_background(
-    image_path: str,
-    output_path: Optional[str] = None,
-    threshold: int = BLACK_PIXEL_THRESHOLD,
-) -> None:
+   
+def crop_black_background(image_path: str, 
+                          output_path: Optional[str] = None, 
+                          threshold: int = BLACK_PIXEL_THRESHOLD):
+    """
+    Detects and crops black background from an image.
+    
+    Args:
+        image_path: Path to input image
+        output_path: Path to save cropped image (optional)
+        threshold: Pixel value threshold to consider as "black" (0-255)    
+    """
+    # Load image
     img = cv2.imread(image_path)
-    if img is None:
-        logger.warning(f"Could not read image: {image_path}")
-        return
-
+    
+    # --- Step 1: Check if black background exists ---
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     black_pixels = np.sum(gray <= threshold)
-    black_ratio = black_pixels / gray.size
+    total_pixels = gray.size
+    black_ratio = black_pixels / total_pixels
+        
+    if black_ratio > BLACK_RATIO_THRESHOLD:  # More than 5% black pixels
+        logger.info("Black background detected!")
+    else:
+        logger.info("No significant black background found.")
+        return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
-    if black_ratio <= BLACK_RATIO_THRESHOLD:
-        logger.info("No significant black background — skipping crop.")
-        return
+    # --- Step 2: Create a mask of non-black pixels ---
+    mask = gray > threshold  # True where pixels are NOT black
 
-    logger.info(f"Black background detected ({black_ratio:.1%}) — cropping.")
+    # --- Step 3: Find bounding box of non-black content ---
+    coords = np.argwhere(mask)          # All non-black pixel coordinates
+    y_min, x_min = coords.min(axis=0)  # Top-left corner
+    y_max, x_max = coords.max(axis=0)  # Bottom-right corner
+    
+    # print(f"Content bounding box: ({x_min}, {y_min}) → ({x_max}, {y_max})")
 
-    mask = gray > threshold
-    coords = np.argwhere(mask)
-    if len(coords) == 0:
-        logger.warning("Image is entirely black — skipping.")
-        return
+    # --- Step 4: Crop the image ---
+    cropped = img[y_min:y_max+1, x_min:x_max+1]
+    
+    # Convert BGR (OpenCV) → RGB (PIL)
+    cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+    result = Image.fromarray(cropped_rgb)
 
-    y_min, x_min = coords.min(axis=0)
-    y_max, x_max = coords.max(axis=0)
-
-    cropped = img[y_min : y_max + 1, x_min : x_max + 1]
-    result = Image.fromarray(cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB))
-
+    # --- Step 5: Save if output path provided ---
     if output_path:
+        os.remove(image_path)
         result.save(output_path)
-        logger.info(f"Cropped image saved: {output_path}")
-        if os.path.exists(image_path):
-            os.remove(image_path)
-
-def main() -> None:
-    folder = datetime.today().strftime("%Y-%m-%d")
-    os.makedirs(folder, exist_ok=True)
-
-    logger.info("Capture loop started. Press Ctrl+C to stop.")
-
-    while True:
-        try:
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_image = f"{folder}/{ts}.png"
-            ocr_image    = f"{folder}/{ts}_ocr.png"
-            final_output = f"{folder}/{ts}_black_crop.png"
-
-            capture_active_window_screenshot(ocr_image)
-            capture_fullscreen(output_image, ocr_image)
-            
-
-            # if os.path.exists(ocr_image):
-            #     capture_fullscreen(ocr_image, final_output)
-
-            time.sleep(5)
-
-        except KeyboardInterrupt:
-            logger.info("Stopped by user.")
-            break
-        except Exception as e:
-            logger.error(f"Error in capture loop: {e}", exc_info=True)
-            time.sleep(30)
-
-
-if __name__ == "__main__":
-    main()
