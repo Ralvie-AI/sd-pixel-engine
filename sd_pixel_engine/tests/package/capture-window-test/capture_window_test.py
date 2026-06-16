@@ -290,10 +290,10 @@ def crop_black_background(
     black_ratio = black_pixels / gray.size
 
     if black_ratio <= BLACK_RATIO_THRESHOLD:
-        logger.info("No significant black background — skipping crop.")
+        logger.info("No significant black background — skipping crop. \n")
         return
 
-    logger.info(f"Black background detected ({black_ratio:.1%}) — cropping.")
+    logger.info(f"Black background detected ({black_ratio:.1%}) — cropping. \n")
 
     mask = gray > threshold
     coords = np.argwhere(mask)
@@ -336,7 +336,7 @@ def main() -> None:
             if os.path.exists(ocr_image):
                 crop_black_background(ocr_image, final_output)
 
-            time.sleep(15)
+            time.sleep(5)
 
         except KeyboardInterrupt:
             logger.info("Stopped by user.")
