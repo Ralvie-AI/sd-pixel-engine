@@ -148,12 +148,13 @@ def setup_logging(folder: str) -> logging.Logger:
     logger = logging.getLogger("ScreenCapture")
     logger.setLevel(logging.DEBUG)
 
+    # Added [%(filename)s:%(lineno)d] to track the file and line number
     fmt_file = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     fmt_console = logging.Formatter(
-        "%(asctime)s - %(levelname)s - %(message)s",
+        "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
         datefmt="%H:%M:%S",
     )
 
