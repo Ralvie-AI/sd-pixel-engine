@@ -199,9 +199,9 @@ class ScreenShot:
             # capture_time =  datetime.now(timezone.utc)
 
             screenshot_path, event_id = self.get_image_path_and_event_id()
-            # if not screenshot_path:
-            #     logger.info("Skipping this scheduled cycle because no new screenshots are available.")
-            #     return 
+            if not screenshot_path:
+                logger.info("Skipping this scheduled cycle because no new screenshots are available.")
+                return 
             
             # logger.error(f"[DEBUG BEFORE PARSE] screenshot_path => {screenshot_path}")
             capture_time = get_image_name_to_utc_dt(screenshot_path)
@@ -233,15 +233,15 @@ class ScreenShot:
         )
         # # GUARD CLAUSE: Handle empty list when screen is locked or system is idle.
         # # Prevents IndexError: list index out of range when accessing filename_list_tmp[-1].
-        # if not filename_list_tmp:
-        #     logger.warning("No screenshot files found. System might be idle or screen locked.")
-        #     # Clean up any leftover or orphaned files to maintain folder state
-        #     for remaining_file in filename_list:
-        #         try:
-        #             os.remove(remaining_file)
-        #         except Exception as e:
-        #             logger.error(f"Failed to remove residual file: {e}")
-        #     return "", ""
+        if not filename_list_tmp:
+            logger.warning("No screenshot files found. System might be idle or screen locked.")
+            # Clean up any leftover or orphaned files to maintain folder state
+            for remaining_file in filename_list:
+                try:
+                    os.remove(remaining_file)
+                except Exception as e:
+                    logger.error(f"Failed to remove residual file: {e}")
+            return "", ""
     
         # Determine time range from available files safely
         if len(filename_list_tmp) == 1: 
@@ -376,6 +376,8 @@ class ScreenShot:
         logger.info(f"First anchored screenshot at {next_run.strftime('%H:%M:%S')}")
 
         while True:
+            screenshot_path = None
+            event_id = None
             try:
                 now = datetime.now()
                 # if next_run <= now:
@@ -394,7 +396,7 @@ class ScreenShot:
                     #     break
 
                 logger.info("Taking anchored screenshot")
-                # screenshot_path, event_id = self.get_image_path_and_event_id()
+                screenshot_path, event_id = self.get_image_path_and_event_id()
                 # logger.debug(f"screenshot_path DEBUG => {screenshot_path}")
 
                 # Safely skip execution if empty paths are returned due to locked screens
@@ -403,20 +405,20 @@ class ScreenShot:
                     next_run += timedelta(seconds=3600 / self.times_per_hour)
                     continue
 
-                screenshot_path, event_id = self.get_image_path_and_event_id()
-                logger.error(f"screenshot_path DEBUG => {screenshot_path}")
-
                 # Parsing issues (ValueError/IndexError) might happen here if filename structures drift
-                capture_time = get_image_name_to_utc_dt(screenshot_path)
-                payload = {
-                    "file_location": screenshot_path,
-                    "is_idle_screenshot": self.is_idle_screenshot,
-                    "created_at": capture_time.isoformat(),
-                    "event_id": event_id,
-                }
+                try:
+                    capture_time = get_image_name_to_utc_dt(screenshot_path)
+                    payload = {
+                        "file_location": screenshot_path,
+                        "is_idle_screenshot": self.is_idle_screenshot,
+                        "created_at": capture_time.isoformat(),
+                        "event_id": event_id,
+                    }
 
-                response = requests.post(self.server_url, json=payload)
-                response.raise_for_status()
+                    response = requests.post(self.server_url, json=payload)
+                    response.raise_for_status()
+                except Exception as parse_or_api_error:
+                    logger.error(f"Failed to process or upload this cycle: {parse_or_api_error}")
 
                 # Normal operation progression path
                 next_run += timedelta(seconds=3600 / self.times_per_hour)
@@ -429,14 +431,14 @@ class ScreenShot:
                 logger.error(f"API error: {req_e}")
                 time_sleep(10)
                 # Re-align next_run forward to avoid looping infinitely on server down-time
-                # next_run = self._next_anchored_time(datetime.now())
+                next_run = self._next_anchored_time(datetime.now())
 
             except Exception as e:
                 logger.error(f"Anchored scheduler error: {e}")
                 time_sleep(10)
                 # CRITICAL FIX: Forces next_run into the future on any unexpected crash
                 # This completely breaks the 10-second rapid error loop behavior.
-            #     next_run = self._next_anchored_time(datetime.now())
+                next_run = self._next_anchored_time(datetime.now())
 
             # finally:
             #     # Final safety check to realign targets during runtime slippage or system sleep events
