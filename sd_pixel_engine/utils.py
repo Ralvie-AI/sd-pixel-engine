@@ -36,7 +36,7 @@ def get_image_name_to_utc(filename: str) -> str:
 
     return dt_utc.strftime("%Y-%m-%d %H:%M:%S.%f")
 
-def get_image_name_to_utc_dt(filename: str) -> datetime:
+def get_image_name_to_utc_dt_old(filename: str) -> datetime:
     import os
     import re
 
@@ -57,6 +57,34 @@ def get_image_name_to_utc_dt(filename: str) -> datetime:
         ts_part,
         "%Y-%m-%dT%H-%M-%S.%fZ"
     ).replace(tzinfo=timezone.utc)
+
+def get_image_name_to_utc_dt(filename: str) -> datetime:
+    import os
+    import re
+    from datetime import datetime, timezone
+
+    filename = os.path.basename(filename)
+    filename = filename.replace("_active", "")
+
+    #แก้ Regex ตรงนี้: ใส่ (\.\d+)? เพื่อบอกว่า "ทศนิยมวินาที จะมีหรือไม่มีก็ได้"
+    match = re.search(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(\.\d+)?Z", filename)
+
+    if not match:
+        raise ValueError(f"Invalid filename format: {filename}")
+
+    ts_part = match.group(0)
+
+    #เพิ่มการตรวจสอบ: ถ้าชื่อไฟล์ไม่มีจุดทศนิยม ให้แกะฟอร์แมตแบบไม่มี .%f
+    if "." not in ts_part:
+        return datetime.strptime(
+            ts_part,
+            "%Y-%m-%dT%H-%M-%SZ"
+        ).replace(tzinfo=timezone.utc)
+    else:
+        return datetime.strptime(
+            ts_part,
+            "%Y-%m-%dT%H-%M-%S.%fZ"
+        ).replace(tzinfo=timezone.utc)
 
 
 def add_second_to_utc(date_time, seconds):
