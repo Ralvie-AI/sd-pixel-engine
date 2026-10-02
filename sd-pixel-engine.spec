@@ -36,7 +36,15 @@ exe = EXE(pyz,
           debug=False,
           strip=False,
           upx=True,
-          console=True )
+          console=True,
+          upx_exclude=[
+            '_uuid.pyd',
+            'vcruntime140.dll',
+            'ucrtbase.dll',
+            'python3.dll',
+            'python311.dll',
+          ],
+          )
           
 coll = COLLECT(exe,
                a.binaries,
