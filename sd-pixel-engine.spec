@@ -1,5 +1,5 @@
 block_cipher = None
-
+excludes_package = ["PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineCore"]
 a = Analysis(['sd_pixel_engine/__main__.py'],
              pathex=[],
              binaries=None,
@@ -7,7 +7,7 @@ a = Analysis(['sd_pixel_engine/__main__.py'],
              hiddenimports=[],
              hookspath=[],
              runtime_hooks=[],
-             excludes=[],
+             excludes=excludes_package,
              win_no_prefer_redirects=False,
              win_private_assemblies=False,
              cipher=block_cipher)
