@@ -5,6 +5,10 @@ import logging
 import threading
 from datetime import time
 
+import win32event
+import winerror
+import win32api
+
 from sd_pixel_engine.log import setup_logging
 from sd_pixel_engine.screenshot import ScreenShot
 from sd_pixel_engine.const import SCREENSHOT_FOLDER_USER
@@ -12,6 +16,14 @@ from sd_pixel_engine.utils import parse_time, parse_days, str2bool
 from sd_pixel_engine.detect_sleep import create_hidden_power_listener
 
 logger = logging.getLogger(__name__)
+
+_instance_mutex = None  # keep a module-level reference so the handle stays alive
+
+def acquire_single_instance() -> bool:
+    """Return True if we are the only instance, False if another is running."""
+    global _instance_mutex
+    _instance_mutex = win32event.CreateMutex(None, False, r"Local\SDPixelEngine_SingleInstance")
+    return win32api.GetLastError() != winerror.ERROR_ALREADY_EXISTS
 
 def setup_argument_parser():
     """Create and return the argument parser."""
@@ -51,6 +63,11 @@ def start_sleep_detection():
     detect_sleep_thread.start()
 
 def main():
+
+    if not acquire_single_instance():
+        logging.warning("Another instance is already running. Exiting.")
+        raise SystemExit(0)
+    
     parser = setup_argument_parser()
     args = parser.parse_args()
 
